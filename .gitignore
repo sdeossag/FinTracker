@@ -1,0 +1,53 @@
+# ── Python / Django ──────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Entornos virtuales
+venv/
+env/
+.venv/
+ENV/
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+
+# Secretos
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── Node / React / Vite ──────────────────────────────
+node_modules/
+dist/
+dist-ssr/
+*.local
+.cache/
+
+# ── IDEs ─────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
+
+# ── Claude / AI ──────────────────────────────────────
+C:UsersASUS.claudeplans/
+*.claudeplans

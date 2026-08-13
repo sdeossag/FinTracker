@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Fondo negro liso (sin bordes redondeados — el generador aplica el mask) -->
+  <rect width="512" height="512" fill="#0A0A0A"/>
+  <!-- Tres barras ascendentes -->
+  <rect x="96" y="316" width="82" height="130" rx="18" fill="#2B7FFF" opacity="0.45"/>
+  <rect x="215" y="236" width="82" height="210" rx="18" fill="#2B7FFF" opacity="0.72"/>
+  <rect x="334" y="136" width="82" height="310" rx="18" fill="#2B7FFF"/>
+  <!-- Línea de tendencia -->
+  <polyline points="137,308 256,228 375,130" fill="none" stroke="#5B9EFF" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="375" cy="130" r="17" fill="#5B9EFF"/>
+</svg>

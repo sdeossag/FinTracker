@@ -1,0 +1,455 @@
+/* FinTracker — Design System v2 · Navy × Black × iOS */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  /* ── Fondos ───────────────────────────────── */
+  --fondo:        #000000;
+  --fondo-2:      #05080f;
+  --card:         #111827;
+  --card-navy:    #0f1929;
+  --card-hover:   #1e2a3a;
+  --card-elevated:#1c2840;
+
+  /* ── Bordes ───────────────────────────────── */
+  --borde:        rgba(255, 255, 255, 0.08);
+  --borde-navy:   rgba(43, 127, 255, 0.18);
+  --separador:    rgba(255, 255, 255, 0.05);
+
+  /* ── Radios ───────────────────────────────── */
+  --radio:        16px;
+  --radio-sm:     10px;
+  --radio-lg:     22px;
+  --radio-xl:     28px;
+
+  /* ── Acento navy-blue ─────────────────────── */
+  --acento:       #2B7FFF;
+  --acento-hover: #1A6AEE;
+  --acento-suave: rgba(43, 127, 255, 0.14);
+  --navy-oscuro:  #0d1f3c;
+  --navy-claro:   #1a3a6b;
+  --navy-glow:    rgba(43, 127, 255, 0.10);
+
+  /* ── Semántica financiera ─────────────────── */
+  --ingreso:       #30D158;
+  --ingreso-suave: rgba(48, 209, 88, 0.12);
+  --gasto:         #FF453A;
+  --gasto-suave:   rgba(255, 69, 58, 0.12);
+  --ahorro:        #FFD60A;
+  --ahorro-suave:  rgba(255, 214, 10, 0.12);
+
+  /* ── Texto (escala iOS) ───────────────────── */
+  --texto-primario:   #FFFFFF;
+  --texto-secundario: #8E8E93;
+  --texto-terciario:  #636366;
+  --texto-cuaternario:#3A3A3C;
+
+  /* ── Nav ──────────────────────────────────── */
+  --nav-height: 83px;
+
+  /* ── Tipografía ───────────────────────────── */
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Reset ──────────────────────────────────── */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--fondo);
+  color: var(--texto-primario);
+  min-height: 100vh;
+  max-width: 430px;
+  margin: 0 auto;
+  overscroll-behavior: none;
+}
+
+/* ── Scroll invisible ────────────────────────── */
+::-webkit-scrollbar { display: none; }
+* { scrollbar-width: none; }
+
+/* ── Página base ─────────────────────────────── */
+.pagina {
+  padding: 56px 16px calc(var(--nav-height) + 16px);
+  min-height: 100vh;
+}
+
+/* ── Cards ───────────────────────────────────── */
+.card {
+  background: var(--card);
+  border: 0.5px solid var(--borde);
+  border-radius: var(--radio-lg);
+  padding: 20px;
+}
+
+.card-navy {
+  background: var(--card-navy);
+  border: 0.5px solid var(--borde-navy);
+  border-radius: var(--radio-lg);
+  padding: 20px;
+}
+
+/* ── Hero gradient card ──────────────────────── */
+.card-hero {
+  background: linear-gradient(135deg, #0d1f3c 0%, #1a3a6b 55%, #0d1f3c 100%);
+  border: 0.5px solid var(--borde-navy);
+  border-radius: var(--radio-xl);
+  padding: 28px 24px 24px;
+  position: relative;
+  overflow: hidden;
+}
+.card-hero::before {
+  content: '';
+  position: absolute;
+  top: -60px; right: -60px;
+  width: 200px; height: 200px;
+  border-radius: 50%;
+  background: rgba(43, 127, 255, 0.12);
+  filter: blur(50px);
+  pointer-events: none;
+}
+
+/* ── Sección header (iOS style) ──────────────── */
+.seccion-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--texto-secundario);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 12px;
+  padding-left: 4px;
+}
+
+/* ── Título de página ────────────────────────── */
+.titulo-seccion {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.6px;
+  margin-bottom: 20px;
+}
+
+/* ── Botones ─────────────────────────────────── */
+.btn-primario {
+  background: var(--acento);
+  color: #fff;
+  border: none;
+  border-radius: var(--radio);
+  padding: 15px 24px;
+  font-size: 16px;
+  font-weight: 600;
+  width: 100%;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+  letter-spacing: -0.2px;
+}
+.btn-primario:active { opacity: 0.85; transform: scale(0.98); }
+.btn-primario:disabled { opacity: 0.4; }
+
+.btn-secundario {
+  background: var(--card-hover);
+  color: var(--texto-primario);
+  border: 0.5px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 15px 24px;
+  font-size: 16px;
+  font-weight: 500;
+  width: 100%;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.btn-secundario:active { opacity: 0.7; }
+
+.btn-icono {
+  background: var(--card);
+  border: 0.5px solid var(--borde);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.btn-icono:active { background: var(--card-hover); }
+
+/* ── Pill / Tag pequeño ──────────────────────── */
+.pill {
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+}
+.pill-acento { background: var(--acento-suave); color: var(--acento); }
+.pill-ingreso { background: var(--ingreso-suave); color: var(--ingreso); }
+.pill-gasto   { background: var(--gasto-suave);   color: var(--gasto);   }
+.pill-ahorro  { background: var(--ahorro-suave);   color: var(--ahorro);  }
+
+/* ── Chips de categoría ──────────────────────── */
+.chip-ingreso { background: var(--ingreso-suave); color: var(--ingreso); padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+.chip-gasto   { background: var(--gasto-suave);   color: var(--gasto);   padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+.chip-ahorro  { background: var(--ahorro-suave);  color: var(--ahorro);  padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+
+/* ── Inputs ──────────────────────────────────── */
+.input {
+  background: var(--card-hover);
+  border: 0.5px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 14px 16px;
+  font-size: 16px;
+  color: var(--texto-primario);
+  width: 100%;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  font-family: inherit;
+}
+.input:focus {
+  border-color: var(--acento);
+  box-shadow: 0 0 0 3px var(--acento-suave);
+}
+.input::placeholder { color: var(--texto-terciario); }
+
+/* ── Select ──────────────────────────────────── */
+select.input {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%238E8E93' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+  padding-right: 40px;
+}
+
+/* ── Label ───────────────────────────────────── */
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--texto-secundario);
+  margin-bottom: 8px;
+  display: block;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ── Separador ───────────────────────────────── */
+.separador {
+  height: 0.5px;
+  background: var(--separador);
+  margin: 14px 0;
+}
+
+/* ── Montos ──────────────────────────────────── */
+.monto-ingreso { color: var(--ingreso); font-weight: 600; }
+.monto-gasto   { color: var(--gasto);   font-weight: 600; }
+.monto-ahorro  { color: var(--ahorro);  font-weight: 600; }
+
+/* ── Bottom sheet modal ──────────────────────── */
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 200;
+  animation: fadeIn 0.2s ease;
+}
+.sheet-content {
+  background: #1c1c1e;
+  border-radius: 24px 24px 0 0;
+  padding: 12px 20px 44px;
+  width: 100%;
+  max-width: 430px;
+  max-height: 92vh;
+  overflow-y: auto;
+  animation: slideUp 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.sheet-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.2);
+  margin: 4px auto 20px;
+}
+.sheet-titulo {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  margin-bottom: 24px;
+}
+
+/* ── Segmented control (iOS) ─────────────────── */
+.segmented {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: var(--radio-sm);
+  padding: 2px;
+  display: flex;
+  gap: 2px;
+}
+.segmented-item {
+  flex: 1;
+  background: transparent;
+  color: var(--texto-secundario);
+  border: none;
+  border-radius: 8px;
+  padding: 9px 4px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+  letter-spacing: -0.2px;
+}
+.segmented-item.activo-gasto   { background: var(--gasto);   color: #fff; }
+.segmented-item.activo-ingreso { background: var(--ingreso); color: #fff; }
+.segmented-item.activo-ahorro  { background: var(--ahorro);  color: #000; }
+.segmented-item.activo-default { background: var(--acento);  color: #fff; }
+
+/* ── Lista agrupada iOS ──────────────────────── */
+.lista-grupo {
+  background: var(--card);
+  border-radius: var(--radio-lg);
+  border: 0.5px solid var(--borde);
+  overflow: hidden;
+}
+.lista-item {
+  display: flex;
+  align-items: center;
+  padding: 14px 16px;
+  transition: background 0.1s;
+}
+.lista-item:active { background: var(--card-hover); }
+.lista-item + .lista-item {
+  border-top: 0.5px solid var(--separador);
+}
+
+/* ── Progress bar ────────────────────────────── */
+.progress-track {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Swatch de color ─────────────────────────── */
+.swatch {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 3px solid transparent;
+  transition: transform 0.1s;
+}
+.swatch:active { transform: scale(0.9); }
+.swatch.seleccionado { border-color: #fff; }
+
+/* ── Vacío / empty state ─────────────────────── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 32px;
+  gap: 12px;
+  text-align: center;
+}
+.empty-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 22px;
+  background: var(--card-navy);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+/* ── Animaciones ─────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0);    }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 1;   }
+}
+.skeleton {
+  background: var(--card);
+  border-radius: 8px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* ── Filtros pill scrollable ─────────────────── */
+.filtros-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.filtro-pill {
+  padding: 8px 18px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  border: 0.5px solid var(--borde);
+  background: var(--card);
+  color: var(--texto-secundario);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+  font-family: inherit;
+  flex-shrink: 0;
+}
+.filtro-pill.activo {
+  background: var(--acento);
+  border-color: var(--acento);
+  color: #fff;
+}
+
+/* ── Dot de color de cuenta ──────────────────── */
+.cuenta-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Color picker row ────────────────────────── */
+.color-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+/* ── Fecha label compacta ────────────────────── */
+.fecha-grupo-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--texto-terciario);
+  padding: 16px 4px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.fecha-grupo-label:first-child {
+  padding-top: 0;
+}

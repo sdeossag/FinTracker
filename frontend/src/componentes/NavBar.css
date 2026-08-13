@@ -1,0 +1,185 @@
+/* NavBar · FinTracker */
+
+.navbar {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 48px);
+  max-width: 398px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  padding: 10px 8px;
+  background: rgba(22, 22, 24, 0.88);
+  backdrop-filter: saturate(180%) blur(32px);
+  -webkit-backdrop-filter: saturate(180%) blur(32px);
+  border: 0.5px solid rgba(255, 255, 255, 0.1);
+  border-radius: 28px;
+  box-shadow:
+    0 8px 40px rgba(0, 0, 0, 0.55),
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  z-index: 100;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+/* ── Píldora ────────────────────────────────────────── */
+.navbar-pill {
+  position: absolute;
+  top: 3px;
+  width: 64px;
+  height: 52px;
+  border-radius: 22px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Relleno glass de la píldora */
+.navbar-pill-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 20px;
+  transition:
+    background 0.28s ease,
+    border-color 0.28s ease,
+    box-shadow 0.28s ease;
+}
+
+/* Brillo superior */
+.navbar-pill-shine {
+  position: absolute;
+  top: 2px;
+  left: 8px;
+  right: 8px;
+  height: 36%;
+  border-radius: 14px 14px 50% 50%;
+  pointer-events: none;
+  transition: background 0.28s ease;
+}
+
+/* ── Estado reposo: sombra neutral ──────────────────── */
+.pill-rest .navbar-pill-fill {
+  background: rgba(255, 255, 255, 0.055);
+  border: 0.5px solid rgba(255, 255, 255, 0.09);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.pill-rest .navbar-pill-shine {
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.07), transparent);
+}
+
+/* ── Estado drag: liquid glass azul ─────────────────── */
+.pill-drag .navbar-pill-fill {
+  background: rgba(10, 132, 255, 0.13);
+  border: 0.5px solid rgba(10, 132, 255, 0.32);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.08),
+    0 0 18px rgba(10, 132, 255, 0.22);
+}
+
+.pill-drag .navbar-pill-shine {
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.16), transparent);
+}
+
+/* ── Tab normal ─────────────────────────────────────── */
+.nav-item {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  padding: 4px 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  transform-origin: center bottom;
+  -webkit-tap-highlight-color: transparent;
+  will-change: transform;
+}
+
+/* ── Icon stack (base gris + fill azul superpuesto) ── */
+.nav-icon-stack {
+  position: relative;
+  width: 22px;
+  height: 22px;
+}
+
+.nav-icon-base {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.nav-icon-fill {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #0A84FF;
+}
+
+/* ── Label ──────────────────────────────────────────── */
+.nav-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* ── FAB central ────────────────────────────────────── */
+.nav-fab-wrapper {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  padding: 0 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+  transform-origin: center bottom;
+  will-change: transform;
+}
+
+.nav-fab {
+  width: 44px;
+  height: 44px;
+  border-radius: 15px;
+  margin-top: -14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: linear-gradient(150deg, #3da8ff 0%, #0A84FF 50%, #0870d8 100%);
+  box-shadow:
+    0 3px 12px rgba(10, 132, 255, 0.4),
+    0 1px 0 rgba(255, 255, 255, 0.22) inset;
+  transition: box-shadow 0.18s ease;
+}
+
+.nav-fab-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.45);
+  transition: color 0.18s ease;
+}
+
+@media (max-width: 380px) {
+  .navbar { width: calc(100% - 24px); }
+}
