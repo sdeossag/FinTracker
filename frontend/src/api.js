@@ -1,8 +1,10 @@
-// Cliente axios centralizado — usa proxy de Vite, sin CORS
 import axios from 'axios'
 
+// En producción usa VITE_API_URL; en dev usa el proxy de Vite
+const BASE_URL = import.meta.env.VITE_API_URL || '/api'
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: BASE_URL,
 })
 
 // Gestión de tokens
