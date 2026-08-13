@@ -12,7 +12,8 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
-    *os.getenv('ALLOWED_HOSTS', '').split(','),
+    *[h.strip() for h in os.getenv('ALLOWED_HOSTS', '').split(',') if h.strip()],
+    *([os.environ['RENDER_EXTERNAL_HOSTNAME']] if 'RENDER_EXTERNAL_HOSTNAME' in os.environ else []),
 ]
 
 INSTALLED_APPS = [
