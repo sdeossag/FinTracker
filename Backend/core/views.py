@@ -484,10 +484,18 @@ class WebAuthnCredentialsView(APIView):
 
 
 # --- WebAuthn Implementation ---
+import os
 
-RP_ID = 'localhost'
+RP_ID   = os.getenv('WEBAUTHN_RP_ID',   'localhost')
 RP_NAME = 'FinTracker'
-ORIGIN = 'http://localhost:5173'
+ORIGIN  = os.getenv('WEBAUTHN_ORIGIN',  'http://localhost:5173')
+
+
+def _get_or_create_perfil(user):
+    from .models import PerfilUsuario
+    perfil, _ = PerfilUsuario.objects.get_or_create(usuario=user)
+    return perfil
+
 
 class WebAuthnRegisterOptionsView(APIView):
     permission_classes = [IsAuthenticated]
@@ -508,9 +516,9 @@ class WebAuthnRegisterOptionsView(APIView):
             ],
         )
 
-        # Guardamos el challenge como string base64url (la sesión no serializa bytes)
-        request.session['webauthn_challenge'] = bytes_to_base64url(options.challenge)
-        request.session.modified = True
+        perfil = _get_or_create_perfil(user)
+        perfil.webauthn_challenge = bytes_to_base64url(options.challenge)
+        perfil.save(update_fields=['webauthn_challenge'])
 
         return Response(json.loads(options_to_json(options)))
 
@@ -520,11 +528,11 @@ class WebAuthnRegisterVerifyView(APIView):
 
     def post(self, request):
         try:
-            challenge_b64 = request.session.get('webauthn_challenge')
+            perfil = _get_or_create_perfil(request.user)
+            challenge_b64 = perfil.webauthn_challenge
             if not challenge_b64:
                 return Response({'error': 'No challenge found'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # py_webauthn 3.x acepta Dict directamente en formato WebAuthn JSON (base64url)
             verification = verify_registration_response(
                 credential=dict(request.data),
                 expected_challenge=base64url_to_bytes(challenge_b64),
@@ -539,6 +547,9 @@ class WebAuthnRegisterVerifyView(APIView):
                 sign_count=verification.sign_count,
                 nickname=request.data.get('nickname', 'Nuevo dispositivo'),
             )
+
+            perfil.webauthn_challenge = ''
+            perfil.save(update_fields=['webauthn_challenge'])
 
             return Response({'status': 'registered'}, status=status.HTTP_201_CREATED)
         except Exception as e:
@@ -568,8 +579,9 @@ class WebAuthnAuthOptionsView(APIView):
             ],
         )
 
-        request.session['webauthn_challenge'] = bytes_to_base64url(options.challenge)
-        request.session.modified = True
+        perfil = _get_or_create_perfil(user)
+        perfil.webauthn_challenge = bytes_to_base64url(options.challenge)
+        perfil.save(update_fields=['webauthn_challenge'])
 
         return Response(json.loads(options_to_json(options)))
 
@@ -579,13 +591,14 @@ class WebAuthnAuthVerifyView(APIView):
 
     def post(self, request):
         try:
-            challenge_b64 = request.session.get('webauthn_challenge')
-            if not challenge_b64:
-                return Response({'error': 'No challenge found'}, status=status.HTTP_400_BAD_REQUEST)
-
             data = request.data
             cred_id_bytes = base64url_to_bytes(data.get('id', ''))
             cred_obj = UserCredential.objects.get(credential_id=cred_id_bytes)
+
+            perfil = _get_or_create_perfil(cred_obj.usuario)
+            challenge_b64 = perfil.webauthn_challenge
+            if not challenge_b64:
+                return Response({'error': 'No challenge found'}, status=status.HTTP_400_BAD_REQUEST)
 
             verification = verify_authentication_response(
                 credential=dict(data),
@@ -598,6 +611,9 @@ class WebAuthnAuthVerifyView(APIView):
 
             cred_obj.sign_count = verification.new_sign_count
             cred_obj.save()
+
+            perfil.webauthn_challenge = ''
+            perfil.save(update_fields=['webauthn_challenge'])
 
             from rest_framework_simplejwt.tokens import RefreshToken
             refresh = RefreshToken.for_user(cred_obj.usuario)

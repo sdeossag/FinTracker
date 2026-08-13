@@ -16,6 +16,8 @@ class PerfilUsuario(models.Model):
     # Día del mes en que resetea el período (1 = mes calendario, 15 = del 15 al 15)
     periodo_inicio = models.PositiveSmallIntegerField(default=1)
     creado_en = models.DateTimeField(auto_now_add=True)
+    # Challenge temporal de WebAuthn — se sobreescribe en cada intento
+    webauthn_challenge = models.CharField(max_length=256, blank=True, default='')
 
     class Meta:
         verbose_name = 'Perfil de usuario'
