@@ -224,7 +224,7 @@ export default function NavBar() {
   }
 
   /* ── Al soltar ───────────────────────────────────── */
-  function resetTabBar() {
+  function resetTabBar(destinoPath) {
     isDragging.current = false
     if (animRef.current) cancelAnimationFrame(animRef.current)
 
@@ -246,23 +246,56 @@ export default function NavBar() {
       if (item.isFab) return
       const btn = btnRefs.current[i]
       if (!btn) return
-      const activo   = isActive(item)
+      const activo   = destinoPath ? item.path === destinoPath || (item.path !== '/' && destinoPath.startsWith(item.path)) : isActive(item)
       const iconFill = btn.querySelector('[data-icon-fill]')
       const labelEl  = btn.querySelector('[data-label]')
       if (iconFill) iconFill.style.clipPath = activo ? 'inset(0 0% 0 0%)' : 'inset(0 100% 0 0)'
       if (labelEl)  labelEl.style.color     = activo ? '#0A84FF' : 'rgba(255,255,255,0.38)'
     })
 
-    // Píldora vuelve al tab activo en modo sombra
-    const cx = getActiveCenterX()
+    // Píldora vuelve al tab destino (o activo) en modo sombra
+    const destIdx = destinoPath ? ITEMS.findIndex(item => !item.isFab && (item.path === destinoPath || (item.path !== '/' && destinoPath.startsWith(item.path)))) : -1
+    const cx = destIdx >= 0 ? getBtnCenterX(destIdx) : getActiveCenterX()
     if (cx !== null) {
-      // Cambia al estilo neutro inmediatamente, luego anima la posición
       if (pillRef.current) {
         pillRef.current.classList.remove('pill-drag')
         pillRef.current.classList.add('pill-rest')
       }
       animarAReposo(cx)
     }
+  }
+
+  /* ── Navegar al soltar el drag ───────────────────── */
+  function handleTouchEnd(e) {
+    if (!isDragging.current) return // tap simple → onClick lo maneja
+
+    const t = e.changedTouches[0]
+
+    // ¿Soltó sobre el FAB?
+    const fabIdx = ITEMS.findIndex(item => item.isFab)
+    if (fabIdx >= 0) {
+      const fabBtn = btnRefs.current[fabIdx]
+      if (fabBtn) {
+        const r = fabBtn.getBoundingClientRect()
+        if (t.clientX >= r.left && t.clientX <= r.right && t.clientY >= r.top && t.clientY <= r.bottom) {
+          resetTabBar()
+          navigate(ITEMS[fabIdx].path)
+          return
+        }
+      }
+    }
+
+    // Tab más cercana a la posición actual de la píldora
+    let closestIdx = -1, closestDist = Infinity
+    ITEMS.forEach((item, i) => {
+      if (item.isFab) return
+      const dist = Math.abs(pillX.current - getBtnCenterX(i))
+      if (dist < closestDist) { closestDist = dist; closestIdx = i }
+    })
+
+    const destino = closestIdx >= 0 ? ITEMS[closestIdx].path : null
+    resetTabBar(destino)
+    if (destino) navigate(destino)
   }
 
   /* ── Render ─────────────────────────────────────── */
@@ -273,7 +306,7 @@ export default function NavBar() {
       onMouseMove={e => updateTabBar(e.clientX, e.clientY)}
       onMouseLeave={resetTabBar}
       onTouchMove={e => { e.preventDefault(); const t = e.touches[0]; updateTabBar(t.clientX, t.clientY) }}
-      onTouchEnd={resetTabBar}
+      onTouchEnd={handleTouchEnd}
     >
       {/* Píldora */}
       <div ref={pillRef} className="navbar-pill pill-rest" style={{ opacity: 0 }}>
