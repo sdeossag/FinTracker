@@ -15,5 +15,7 @@ RUN python manage.py collectstatic --noinput
 
 EXPOSE 8080
 
-CMD ["gunicorn", "fintracker_backend.wsgi:application", \
-     "--bind", "0.0.0.0:8080", "--workers", "2", "--timeout", "60"]
+# Aplica migraciones pendientes antes de iniciar el servidor
+CMD python manage.py migrate --noinput && \
+    gunicorn fintracker_backend.wsgi:application \
+    --bind 0.0.0.0:8080 --workers 2 --timeout 60
