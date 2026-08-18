@@ -131,6 +131,7 @@ export default function Recurrentes() {
   const [categorias, setCategorias] = useState([])
   const [cargando, setCargando] = useState(true)
   const [modal, setModal] = useState(false)
+  const [editandoId, setEditandoId] = useState(null)
   const [form, setForm] = useState(formVacio)
   const [errorForm, setErrorForm] = useState('')
   const [guardando, setGuardando] = useState(false)
@@ -160,8 +161,24 @@ export default function Recurrentes() {
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
 
-  const abrirModal = () => { setForm(formVacio); setErrorForm(''); setModal(true) }
-  const cerrarModal = () => { setModal(false); setErrorForm('') }
+  const abrirModal = () => { setForm(formVacio); setEditandoId(null); setErrorForm(''); setModal(true) }
+  const cerrarModal = () => { setModal(false); setEditandoId(null); setErrorForm('') }
+
+  const abrirEditar = (rec) => {
+    setForm({
+      nombre: rec.nombre,
+      monto: String(rec.monto),
+      tipo: rec.tipo,
+      frecuencia: rec.frecuencia,
+      dia_ejecucion: rec.dia_ejecucion ?? null,
+      cuenta_origen: rec.cuenta_origen ? String(rec.cuenta_origen) : '',
+      cuenta_destino: rec.cuenta_destino ? String(rec.cuenta_destino) : '',
+      categoria: rec.categoria ? String(rec.categoria) : '',
+    })
+    setEditandoId(rec.id)
+    setErrorForm('')
+    setModal(true)
+  }
 
   const guardar = async () => {
     if (!form.nombre.trim()) { setErrorForm('El nombre es obligatorio.'); return }
@@ -173,17 +190,22 @@ export default function Recurrentes() {
     }
     setErrorForm('')
     setGuardando(true)
+    const payload = {
+      nombre: form.nombre,
+      monto: parseInt(form.monto),
+      tipo: form.tipo,
+      frecuencia: form.frecuencia,
+      dia_ejecucion: form.dia_ejecucion ?? null,
+      cuenta_origen: form.cuenta_origen || null,
+      cuenta_destino: form.cuenta_destino || null,
+      categoria: form.categoria || null,
+    }
     try {
-      await api.post('/recurrentes/', {
-        nombre: form.nombre,
-        monto: parseInt(form.monto),
-        tipo: form.tipo,
-        frecuencia: form.frecuencia,
-        dia_ejecucion: form.dia_ejecucion ?? null,
-        cuenta_origen: form.cuenta_origen || null,
-        cuenta_destino: form.cuenta_destino || null,
-        categoria: form.categoria || null,
-      })
+      if (editandoId) {
+        await api.patch(`/recurrentes/${editandoId}/`, payload)
+      } else {
+        await api.post('/recurrentes/', payload)
+      }
       cerrarModal()
       await cargar()
     } catch (err) {
@@ -433,6 +455,14 @@ export default function Recurrentes() {
                     >
                       {enFeedback ? '✓ Registrada' : enRegistro ? 'Registrando...' : 'Registrar ahora'}
                     </button>
+                    <button onClick={() => abrirEditar(rec)} style={{
+                      width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+                      background: 'var(--card-hover)', color: 'var(--texto-secundario)',
+                      border: 'none', cursor: 'pointer', fontSize: 16,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      ✏️
+                    </button>
                     <button onClick={() => setConfirmEliminar(rec.id)} style={{
                       width: 40, height: 40, borderRadius: 12, flexShrink: 0,
                       background: 'var(--card-hover)', color: 'var(--texto-terciario)',
@@ -464,7 +494,7 @@ export default function Recurrentes() {
             maxHeight: '92vh', overflowY: 'auto',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <h2 style={{ fontSize: 18, fontWeight: 700 }}>Nueva plantilla recurrente</h2>
+              <h2 style={{ fontSize: 18, fontWeight: 700 }}>{editandoId ? 'Editar plantilla' : 'Nueva plantilla recurrente'}</h2>
               <button onClick={cerrarModal} style={{
                 background: 'var(--card-hover)', border: 'none', borderRadius: '50%',
                 width: 32, height: 32, cursor: 'pointer', color: 'var(--texto-secundario)', fontSize: 18,
@@ -602,7 +632,7 @@ export default function Recurrentes() {
             )}
 
             <button onClick={guardar} disabled={guardando} className="btn-primario" style={{ width: '100%', padding: 14, fontSize: 15 }}>
-              {guardando ? 'Guardando...' : 'Crear plantilla'}
+              {guardando ? 'Guardando...' : editandoId ? 'Guardar cambios' : 'Crear plantilla'}
             </button>
           </div>
         </div>
