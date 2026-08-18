@@ -5,7 +5,7 @@ const formatCOP = (n) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(n)
 
 const COLORES = ['#34C759', '#0A84FF', '#BF5AF2', '#FF9F0A', '#FFD60A', '#FF453A', '#64D2FF', '#FF375F']
-const cuentaVacia = { nombre: '', tipo: 'activo', balance_inicial: '0', color_hex: '#0A84FF' }
+const cuentaVacia = { nombre: '', tipo: 'activo', balance_inicial: '0', color_hex: '#0A84FF', _balance_actual_ref: 0, _balance_inicial_ref: 0 }
 
 export default function Cuentas() {
   const [cuentas, setCuentas] = useState([])
@@ -45,6 +45,9 @@ export default function Cuentas() {
       tipo: cuenta.tipo,
       balance_inicial: String(cuenta.balance_inicial),
       color_hex: cuenta.color_hex,
+      _balance_actual_ref: cuenta.balance_actual,
+      _balance_inicial_ref: cuenta.balance_inicial,
+      _balance_actual_editable: String(cuenta.balance_actual),
     })
     setEditandoId(cuenta.id)
     setErrorForm('')
@@ -62,10 +65,22 @@ export default function Cuentas() {
       setErrorForm('El nombre de la cuenta es obligatorio.')
       return
     }
-    const balanceNum = parseInt(form.balance_inicial)
-    if (isNaN(balanceNum)) {
-      setErrorForm('El balance inicial debe ser un número.')
-      return
+    let balanceInicialFinal
+    if (editandoId) {
+      const balanceActualDeseado = parseInt(form._balance_actual_editable)
+      if (isNaN(balanceActualDeseado)) {
+        setErrorForm('El balance actual debe ser un número.')
+        return
+      }
+      // Recalcula balance_inicial para que balance_actual sea el valor deseado
+      const delta = form._balance_actual_ref - form._balance_inicial_ref
+      balanceInicialFinal = balanceActualDeseado - delta
+    } else {
+      balanceInicialFinal = parseInt(form.balance_inicial)
+      if (isNaN(balanceInicialFinal)) {
+        setErrorForm('El balance inicial debe ser un número.')
+        return
+      }
     }
 
     setErrorForm('')
@@ -74,7 +89,7 @@ export default function Cuentas() {
       const datos = {
         nombre: form.nombre.trim(),
         tipo: form.tipo,
-        balance_inicial: balanceNum,
+        balance_inicial: balanceInicialFinal,
         color_hex: form.color_hex,
       }
       if (editandoId) {
@@ -255,15 +270,34 @@ export default function Cuentas() {
               Activo: dinero que tienes (Nequi, efectivo). Pasivo: deuda (tarjeta crédito).
             </p>
 
-            <label className="label">Balance inicial (COP)</label>
-            <input
-              className="input"
-              type="number"
-              placeholder="0"
-              value={form.balance_inicial}
-              onChange={e => setForm({ ...form, balance_inicial: e.target.value })}
-              style={{ marginBottom: 16 }}
-            />
+            {editandoId ? (
+              <>
+                <label className="label">Balance actual (COP)</label>
+                <input
+                  className="input"
+                  type="number"
+                  placeholder="0"
+                  value={form._balance_actual_editable}
+                  onChange={e => setForm({ ...form, _balance_actual_editable: e.target.value })}
+                  style={{ marginBottom: 4 }}
+                />
+                <p style={{ fontSize: 11, color: 'var(--texto-terciario)', marginBottom: 16 }}>
+                  Ajusta al saldo real de tu cuenta. Útil si hay un error o una transacción sin registrar.
+                </p>
+              </>
+            ) : (
+              <>
+                <label className="label">Balance inicial (COP)</label>
+                <input
+                  className="input"
+                  type="number"
+                  placeholder="0"
+                  value={form.balance_inicial}
+                  onChange={e => setForm({ ...form, balance_inicial: e.target.value })}
+                  style={{ marginBottom: 16 }}
+                />
+              </>
+            )}
 
             <label className="label">Color</label>
             <div style={{ display: 'flex', gap: 10, marginBottom: 24, flexWrap: 'wrap' }}>
