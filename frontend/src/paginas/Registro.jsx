@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import api from '../api'
+import Marca from '../componentes/Marca'
+import { AvisoError } from '../componentes/Controles'
+import './Acceso.css'
 
 export default function Registro() {
   const navigate = useNavigate()
@@ -10,6 +13,10 @@ export default function Registro() {
   const [cargando, setCargando] = useState(false)
 
   const set = (campo) => (e) => setForm({ ...form, [campo]: e.target.value })
+
+  // Validación en línea, no solo al enviar
+  const passCorta = form.password.length > 0 && form.password.length < 4
+  const noCoinciden = form.confirm_password.length > 0 && form.password !== form.confirm_password
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -22,7 +29,7 @@ export default function Registro() {
 
     setCargando(true)
     try {
-      await api.post('/registro/', form)
+      await api.post('/registro/', { ...form, username: form.username.trim(), email: form.email.trim() })
       setExito(true)
     } catch (err) {
       const msg = err.response?.data?.error || 'Error al crear la cuenta. Intenta de nuevo.'
@@ -34,143 +41,130 @@ export default function Registro() {
 
   if (exito) {
     return (
-      <div className="pagina" style={{
-        display: 'flex', flexDirection: 'column', justifyContent: 'center',
-        alignItems: 'center', minHeight: '100vh',
-        background: 'linear-gradient(135deg, var(--card) 0%, #1a1a1a 100%)',
-        padding: 20,
-      }}>
-        <div className="card" style={{
-          maxWidth: 400, width: '100%', padding: '48px 32px',
-          borderRadius: 32, textAlign: 'center', border: '1px solid var(--borde)',
-        }}>
-          <div style={{ fontSize: 56, marginBottom: 20 }}>✅</div>
-          <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12 }}>¡Cuenta creada!</h2>
-          <p style={{ color: 'var(--texto-secundario)', fontSize: 15, lineHeight: '1.6', marginBottom: 32 }}>
-            Tu cuenta <strong>{form.username}</strong> fue creada exitosamente. Ya puedes iniciar sesión.
+      <main className="acceso">
+        <div className="acceso-contenido" style={{ textAlign: 'center' }}>
+          <div className="check-exito" style={{ margin: '0 auto 24px' }}>
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M5 12.5l4.5 4.5L19 7.5" />
+            </svg>
+          </div>
+          <h1 className="titulo-2" style={{ marginBottom: 10 }}>¡Cuenta creada!</h1>
+          <p className="texto-callout" style={{ color: 'var(--texto-secundario)', marginBottom: 32 }}>
+            Tu usuario <strong style={{ color: 'var(--texto-primario)' }}>{form.username}</strong> está listo. Ya puedes iniciar sesión.
           </p>
-          <button
-            onClick={() => navigate('/login')}
-            className="btn-primario"
-            style={{ width: '100%', padding: 15, fontSize: 16 }}
-          >
-            Ir a iniciar sesión
+          <button onClick={() => navigate('/login')} className="btn-primario">
+            Iniciar sesión
           </button>
         </div>
-      </div>
+      </main>
     )
   }
 
   return (
-    <div className="pagina" style={{
-      display: 'flex', flexDirection: 'column', justifyContent: 'center',
-      alignItems: 'center', minHeight: '100vh',
-      background: 'linear-gradient(135deg, var(--card) 0%, #1a1a1a 100%)',
-      padding: 20,
-    }}>
-      <div className="card" style={{
-        maxWidth: 400, width: '100%', padding: '48px 32px',
-        borderRadius: 32, boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
-        textAlign: 'center', border: '1px solid var(--borde)',
-      }}>
-        <div style={{ marginBottom: 36 }}>
-          <div style={{
-            width: 64, height: 64, background: 'var(--acento)',
-            borderRadius: 18, margin: '0 auto 20px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 32, boxShadow: '0 8px 16px rgba(0,0,0,0.2)',
-          }}>
-            💰
-          </div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8, letterSpacing: '-0.5px' }}>
-            Crear cuenta
-          </h1>
-          <p style={{ color: 'var(--texto-secundario)', fontSize: 14, lineHeight: '1.5' }}>
+    <main className="acceso">
+      <div className="acceso-contenido aparecer">
+        <header className="acceso-cabecera" style={{ marginBottom: 28 }}>
+          <Marca size={56} />
+          <h1 className="titulo-grande" style={{ marginTop: 18 }}>Crear cuenta</h1>
+          <p className="texto-callout" style={{ color: 'var(--texto-secundario)', marginTop: 6 }}>
             Empieza a controlar tus finanzas hoy.
           </p>
-        </div>
+        </header>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16, textAlign: 'left' }}>
-          <div>
-            <label className="label" style={{ marginBottom: 6, display: 'block' }}>Usuario</label>
+        <form onSubmit={handleSubmit} noValidate>
+          <div className="campo">
+            <label className="label" htmlFor="reg-usuario">Usuario</label>
             <input
+              id="reg-usuario"
               className="input"
               type="text"
               placeholder="Tu nombre de usuario"
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="next"
               value={form.username}
               onChange={set('username')}
-              style={{ padding: '13px 16px', fontSize: 15 }}
               required
             />
           </div>
 
-          <div>
-            <label className="label" style={{ marginBottom: 6, display: 'block' }}>
-              Correo electrónico <span style={{ color: 'var(--texto-terciario)', fontWeight: 400 }}>(opcional)</span>
+          <div className="campo">
+            <label className="label" htmlFor="reg-email">
+              Correo <span style={{ color: 'var(--texto-terciario)' }}>· opcional</span>
             </label>
             <input
+              id="reg-email"
               className="input"
               type="email"
+              inputMode="email"
               placeholder="tu@correo.com"
+              autoComplete="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="next"
               value={form.email}
               onChange={set('email')}
-              style={{ padding: '13px 16px', fontSize: 15 }}
             />
           </div>
 
-          <div>
-            <label className="label" style={{ marginBottom: 6, display: 'block' }}>Contraseña</label>
+          <div className="campo">
+            <label className="label" htmlFor="reg-pass">Contraseña</label>
             <input
+              id="reg-pass"
               className="input"
               type="password"
               placeholder="Mínimo 4 caracteres"
+              autoComplete="new-password"
+              enterKeyHint="next"
               value={form.password}
               onChange={set('password')}
-              style={{ padding: '13px 16px', fontSize: 15 }}
+              aria-invalid={passCorta || undefined}
+              aria-describedby="reg-pass-ayuda"
               required
             />
+            <p id="reg-pass-ayuda" className={passCorta ? 'campo-error' : 'campo-ayuda'}>
+              Usa al menos 4 caracteres.
+            </p>
           </div>
 
-          <div>
-            <label className="label" style={{ marginBottom: 6, display: 'block' }}>Confirmar contraseña</label>
+          <div className="campo">
+            <label className="label" htmlFor="reg-confirm">Confirmar contraseña</label>
             <input
+              id="reg-confirm"
               className="input"
               type="password"
               placeholder="Repite la contraseña"
+              autoComplete="new-password"
+              enterKeyHint="go"
               value={form.confirm_password}
               onChange={set('confirm_password')}
-              style={{ padding: '13px 16px', fontSize: 15 }}
+              aria-invalid={noCoinciden || undefined}
+              aria-describedby={noCoinciden ? 'reg-confirm-error' : undefined}
               required
             />
+            {noCoinciden && <p id="reg-confirm-error" className="campo-error">Las contraseñas no coinciden.</p>}
           </div>
 
-          {error && (
-            <div style={{
-              background: 'rgba(255, 69, 58, 0.1)', color: 'var(--gasto)',
-              padding: 12, borderRadius: 12, fontSize: 13,
-              border: '1px solid rgba(255, 69, 58, 0.2)', textAlign: 'center',
-            }}>
-              {error}
-            </div>
-          )}
+          <AvisoError>{error}</AvisoError>
 
           <button
             type="submit"
             className="btn-primario"
-            disabled={cargando}
-            style={{ padding: 15, fontSize: 16, fontWeight: 600, borderRadius: 16, marginTop: 4 }}
+            disabled={cargando || !form.username.trim() || form.password.length < 4 || noCoinciden || !form.confirm_password}
+            style={{ marginTop: 8 }}
           >
-            {cargando ? 'Creando cuenta...' : 'Crear cuenta'}
+            {cargando ? 'Creando cuenta…' : 'Crear cuenta'}
           </button>
         </form>
 
-        <p style={{ marginTop: 28, fontSize: 14, color: 'var(--texto-terciario)' }}>
+        <p className="texto-callout acceso-pie">
           ¿Ya tienes cuenta?{' '}
-          <Link to="/login" style={{ color: 'var(--acento)', textDecoration: 'none', fontWeight: 500 }}>
-            Iniciar sesión
-          </Link>
+          <Link to="/login" className="acceso-enlace">Inicia sesión</Link>
         </p>
       </div>
-    </div>
+    </main>
   )
 }

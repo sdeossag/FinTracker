@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { toast } from 'sonner'
 import api, { ensureArray } from '../api'
-
-const TIPOS_COLOR = {
-  gasto: 'var(--gasto)',
-  ingreso: 'var(--ingreso)',
-  ahorro: 'var(--ahorro)',
-}
+import Pagina from '../componentes/Pagina'
+import Icono from '../componentes/Icono'
+import TransaccionForm from '../componentes/TransaccionForm'
+import { validarTransaccion } from '../utils/transaccion'
+import { AvisoError, EstadoVacio } from '../componentes/Controles'
+import { ConfirmarSheet } from '../componentes/Sheet'
+import { vibrar } from '../utils/formato'
 
 export default function EditarTransaccion() {
   const navigate = useNavigate()
@@ -19,7 +21,8 @@ export default function EditarTransaccion() {
   const [guardando, setGuardando] = useState(false)
   const [eliminando, setEliminando] = useState(false)
   const [confirmEliminar, setConfirmEliminar] = useState(false)
-  const [error, setError] = useState('')
+  const [errores, setErrores] = useState({})
+  const [errorServidor, setErrorServidor] = useState('')
 
   useEffect(() => {
     const cargar = async () => {
@@ -44,7 +47,6 @@ export default function EditarTransaccion() {
         setCategorias(ensureArray(resCat.data))
       } catch (err) {
         console.error('Error cargando transacción:', err)
-        setError('No se pudo cargar la transacción.')
       } finally {
         setCargando(false)
       }
@@ -52,34 +54,24 @@ export default function EditarTransaccion() {
     cargar()
   }, [id])
 
-  const toggleCategoria = (catId) => {
-    setForm(prev => ({
-      ...prev,
-      categorias: prev.categorias.includes(catId)
-        ? prev.categorias.filter(c => c !== catId)
-        : [...prev.categorias, catId],
-    }))
-  }
-
-  const cambiarTipo = (tipo) => {
-    setForm(prev => ({
-      ...prev,
-      tipo,
-      cuenta_origen: '',
-      cuenta_destino: '',
-      categorias: [],
-    }))
+  const cambiar = (parcial) => {
+    setForm(f => ({ ...f, ...parcial }))
+    setErrores(e => {
+      if ('tipo' in parcial) return {}
+      const sig = { ...e }
+      Object.keys(parcial).forEach(k => delete sig[k])
+      return sig
+    })
   }
 
   const guardar = async () => {
-    if (!form.nombre.trim()) { setError('El nombre es obligatorio.'); return }
-    if (!form.monto || parseInt(form.monto) <= 0) { setError('El monto debe ser mayor a 0.'); return }
-    if (form.tipo === 'gasto' && !form.cuenta_origen) { setError('Selecciona la cuenta de origen.'); return }
-    if (form.tipo === 'ingreso' && !form.cuenta_destino) { setError('Selecciona la cuenta de destino.'); return }
-    if (form.tipo === 'ahorro' && (!form.cuenta_origen || !form.cuenta_destino)) {
-      setError('Para ahorros necesitas cuenta origen y destino.'); return
+    const e = validarTransaccion(form)
+    setErrores(e)
+    if (Object.keys(e).length) {
+      document.getElementById(Object.keys(e)[0])?.focus()
+      return
     }
-    setError('')
+    setErrorServidor('')
     setGuardando(true)
     try {
       await api.patch(`/transacciones/${id}/`, {
@@ -92,10 +84,12 @@ export default function EditarTransaccion() {
         categorias_ids: form.categorias,
         notas: form.notas,
       })
+      vibrar()
+      toast.success('Cambios guardados')
       navigate('/transacciones')
     } catch (err) {
       console.error('Error guardando:', err)
-      setError('Error al guardar. Intenta de nuevo.')
+      setErrorServidor('No se pudo guardar. Intenta de nuevo.')
     } finally {
       setGuardando(false)
     }
@@ -105,187 +99,76 @@ export default function EditarTransaccion() {
     setEliminando(true)
     try {
       await api.delete(`/transacciones/${id}/`)
+      setConfirmEliminar(false)
+      toast.success('Transacción eliminada')
       navigate('/transacciones')
     } catch (err) {
       console.error('Error eliminando:', err)
+      toast.error('No se pudo eliminar la transacción')
       setEliminando(false)
     }
   }
 
+  const atras = { etiqueta: 'Historial', a: '/transacciones' }
+
   if (cargando) return (
-    <div className="pagina">
-      <p style={{ color: 'var(--texto-secundario)' }}>Cargando...</p>
-    </div>
+    <Pagina titulo="Editar" atras={atras} sinNav>
+      <div className="skeleton" style={{ height: 40, marginBottom: 32 }} />
+      <div className="skeleton" style={{ height: 60, width: '60%', margin: '0 auto 36px' }} />
+      {[1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: 50, marginBottom: 18 }} />)}
+    </Pagina>
   )
 
   if (!form) return (
-    <div className="pagina">
-      <p style={{ color: 'var(--gasto)' }}>{error || 'Transacción no encontrada.'}</p>
-      <button onClick={() => navigate(-1)} className="btn-secundario" style={{ marginTop: 16 }}>Volver</button>
-    </div>
+    <Pagina titulo="Editar" atras={atras} sinNav>
+      <EstadoVacio
+        icono="alerta"
+        titulo="No encontramos esta transacción"
+        texto="Puede que se haya eliminado o que no haya conexión."
+        accion={<button className="btn-primario" onClick={() => navigate('/transacciones')}>Ir al historial</button>}
+      />
+    </Pagina>
   )
 
-  const categoriasFiltradas = categorias.filter(c => c.tipo === form.tipo)
-  const colorTipo = TIPOS_COLOR[form.tipo]
-
   return (
-    <div className="pagina">
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-        <button onClick={() => navigate(-1)} style={{
-          background: 'var(--card)', border: '0.5px solid var(--borde)',
-          borderRadius: 20, padding: '8px 14px', color: 'var(--texto-secundario)', cursor: 'pointer', fontSize: 14,
-        }}>← Volver</button>
-        <h1 style={{ fontSize: 22, fontWeight: 700 }}>Editar transacción</h1>
-      </div>
-
-      {/* Selector de tipo */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
-        {['gasto', 'ingreso', 'ahorro'].map(t => (
-          <button key={t} onClick={() => cambiarTipo(t)} style={{
-            flex: 1,
-            background: form.tipo === t ? TIPOS_COLOR[t] : 'var(--card)',
-            color: form.tipo === t ? '#fff' : 'var(--texto-secundario)',
-            border: '0.5px solid var(--borde)', borderRadius: 'var(--radio-sm)',
-            padding: '12px 4px', fontSize: 14, fontWeight: 600, cursor: 'pointer',
-            textTransform: 'capitalize', transition: 'all 0.15s',
-          }}>{t}</button>
-        ))}
-      </div>
-
-      {/* Monto grande */}
-      <div style={{ textAlign: 'center', marginBottom: 28 }}>
-        <p style={{ fontSize: 13, color: 'var(--texto-secundario)', marginBottom: 8 }}>Monto (COP)</p>
-        <input
-          type="number"
-          placeholder="0"
-          value={form.monto}
-          onChange={e => setForm({ ...form, monto: e.target.value })}
-          style={{
-            background: 'transparent', border: 'none', outline: 'none',
-            fontSize: 48, fontWeight: 700, color: colorTipo,
-            width: '100%', textAlign: 'center', letterSpacing: -1,
-          }}
+    <Pagina titulo="Editar transacción" atras={atras} sinNav>
+      <form onSubmit={e => { e.preventDefault(); guardar() }} noValidate>
+        <TransaccionForm
+          form={form}
+          onCambio={cambiar}
+          cuentas={cuentas}
+          categorias={categorias}
+          errores={errores}
         />
-        <div style={{ height: 1, background: 'var(--borde)', marginTop: 8 }} />
-      </div>
 
-      {/* Descripción */}
-      <label className="label">Descripción</label>
-      <input
-        className="input"
-        placeholder="Ej: Metro, Almuerzo..."
-        value={form.nombre}
-        onChange={e => setForm({ ...form, nombre: e.target.value })}
-        style={{ marginBottom: 16 }}
-      />
+        <AvisoError>{errorServidor}</AvisoError>
 
-      {/* Fecha */}
-      <label className="label">Fecha</label>
-      <input
-        className="input"
-        type="date"
-        value={form.fecha}
-        onChange={e => setForm({ ...form, fecha: e.target.value })}
-        style={{ marginBottom: 16, colorScheme: 'dark' }}
-      />
-
-      {/* Cuenta origen */}
-      {(form.tipo === 'gasto' || form.tipo === 'ahorro') && (
-        <>
-          <label className="label">{form.tipo === 'ahorro' ? 'Cuenta origen (de dónde sale)' : 'Cuenta'}</label>
-          <select className="input" value={form.cuenta_origen}
-            onChange={e => setForm({ ...form, cuenta_origen: e.target.value })}
-            style={{ marginBottom: 16 }}>
-            <option value="">Seleccionar cuenta...</option>
-            {cuentas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-          </select>
-        </>
-      )}
-
-      {/* Cuenta destino */}
-      {(form.tipo === 'ingreso' || form.tipo === 'ahorro') && (
-        <>
-          <label className="label">{form.tipo === 'ahorro' ? 'Cuenta destino (a dónde entra)' : 'Cuenta'}</label>
-          <select className="input" value={form.cuenta_destino}
-            onChange={e => setForm({ ...form, cuenta_destino: e.target.value })}
-            style={{ marginBottom: 16 }}>
-            <option value="">Seleccionar cuenta...</option>
-            {cuentas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-          </select>
-        </>
-      )}
-
-      {/* Categorías */}
-      {categoriasFiltradas.length > 0 && (
-        <>
-          <label className="label">Categorías (puedes elegir varias)</label>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-            {categoriasFiltradas.map(cat => (
-              <button key={cat.id} onClick={() => toggleCategoria(cat.id)} style={{
-                background: form.categorias.includes(cat.id) ? cat.color_hex : 'var(--card)',
-                color: form.categorias.includes(cat.id) ? '#fff' : 'var(--texto-secundario)',
-                border: `0.5px solid ${form.categorias.includes(cat.id) ? cat.color_hex : 'var(--borde)'}`,
-                borderRadius: 20, padding: '8px 14px', fontSize: 13, fontWeight: 500,
-                cursor: 'pointer', transition: 'all 0.15s',
-              }}>{cat.nombre}</button>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* Notas */}
-      <label className="label">Notas (opcional)</label>
-      <textarea
-        className="input"
-        placeholder="Agrega un detalle si quieres..."
-        value={form.notas}
-        onChange={e => setForm({ ...form, notas: e.target.value })}
-        rows={3}
-        style={{ marginBottom: 24, resize: 'none' }}
-      />
-
-      {error && (
-        <p style={{ color: 'var(--gasto)', fontSize: 14, marginBottom: 16, textAlign: 'center' }}>{error}</p>
-      )}
-
-      {/* Botón guardar */}
-      <button onClick={guardar} className="btn-primario" disabled={guardando} style={{ marginBottom: 12 }}>
-        {guardando ? 'Guardando...' : 'Guardar cambios'}
-      </button>
-
-      {/* Eliminar con confirmación inline */}
-      {confirmEliminar ? (
-        <div style={{
-          background: 'var(--gasto-suave)', border: '1px solid var(--gasto)',
-          borderRadius: 14, padding: '14px 16px',
-          display: 'flex', alignItems: 'center', gap: 12,
-        }}>
-          <p style={{ flex: 1, fontSize: 14, color: 'var(--texto-primario)' }}>
-            ¿Eliminar esta transacción? No se puede deshacer.
-          </p>
-          <button onClick={eliminar} disabled={eliminando} style={{
-            background: 'var(--gasto)', color: '#fff', border: 'none',
-            borderRadius: 10, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-          }}>
-            {eliminando ? '...' : 'Eliminar'}
-          </button>
-          <button onClick={() => setConfirmEliminar(false)} style={{
-            background: 'var(--card)', border: 'none', borderRadius: 10,
-            padding: '8px 14px', fontSize: 13, cursor: 'pointer', color: 'var(--texto-secundario)',
-          }}>
-            Cancelar
-          </button>
-        </div>
-      ) : (
-        <button onClick={() => setConfirmEliminar(true)} style={{
-          width: '100%', background: 'none', border: '0.5px solid var(--gasto)',
-          borderRadius: 14, padding: '13px', fontSize: 14, fontWeight: 500,
-          color: 'var(--gasto)', cursor: 'pointer',
-        }}>
+        <button
+          type="button"
+          className="btn-texto peligro"
+          onClick={() => setConfirmEliminar(true)}
+          style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 4 }}
+        >
+          <Icono nombre="basura" size={18} />
           Eliminar transacción
         </button>
-      )}
-    </div>
+
+        <div className="barra-accion">
+          <button type="submit" className="btn-primario" disabled={guardando}>
+            {guardando ? 'Guardando…' : 'Guardar cambios'}
+          </button>
+        </div>
+      </form>
+
+      <ConfirmarSheet
+        abierto={confirmEliminar}
+        onCerrar={() => setConfirmEliminar(false)}
+        titulo="¿Eliminar transacción?"
+        mensaje={`"${form.nombre}" se eliminará y los saldos de tus cuentas se recalcularán. Esta acción no se puede deshacer.`}
+        textoConfirmar="Eliminar transacción"
+        onConfirmar={eliminar}
+        cargando={eliminando}
+      />
+    </Pagina>
   )
 }

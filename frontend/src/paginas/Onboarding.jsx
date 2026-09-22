@@ -1,111 +1,107 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import api from '../api'
+import Icono from '../componentes/Icono'
+import Marca from '../componentes/Marca'
+import { AvisoError, CampoMonto, SelectorColor } from '../componentes/Controles'
+import { capitalizar } from '../utils/formato'
 
-const COLORES = ['#2B7FFF', '#30D158', '#FF453A', '#FFD60A', '#BF5AF2', '#FF9F0A', '#5AC8FA', '#FF375F']
+const COLORES = ['#0A84FF', '#30D158', '#FF453A', '#FFD60A', '#BF5AF2', '#FF9F0A', '#5AC8FA', '#FF375F']
 
 const TOUR = [
-  {
-    icono: '🏠',
-    titulo: 'Inicio',
-    desc: 'Ve tu balance total y el resumen del mes: ingresos, gastos y ahorros de un vistazo.',
-    ruta: '/',
-  },
-  {
-    icono: '📋',
-    titulo: 'Historial',
-    desc: 'Revisa todas tus transacciones. Filtra por tipo, mes o busca cualquier movimiento.',
-    ruta: '/transacciones',
-  },
-  {
-    icono: '🎯',
-    titulo: 'Presupuesto',
-    desc: 'Crea límites de gasto por categoría y ve en tiempo real cuánto llevas gastado.',
-    ruta: '/presupuesto',
-  },
-  {
-    icono: '⚙️',
-    titulo: 'Configuración',
-    desc: 'Cambia tu contraseña, vincula Face ID o Touch ID y ajusta el período de tu presupuesto.',
-    ruta: '/configuracion',
-  },
+  { icono: 'inicio', color: '#0A84FF', titulo: 'Inicio', desc: 'Tu balance total y el resumen del mes: ingresos, gastos y ahorros de un vistazo.' },
+  { icono: 'lista', color: '#30D158', titulo: 'Historial', desc: 'Todas tus transacciones. Filtra por tipo o mes, o busca cualquier movimiento.' },
+  { icono: 'objetivo', color: '#FF9F0A', titulo: 'Presupuesto', desc: 'Límites de gasto por categoría y cuánto llevas gastado en tiempo real.' },
+  { icono: 'ajustes', color: '#8E8E93', titulo: 'Configuración', desc: 'Cambia tu contraseña, vincula Face ID o huella y ajusta el período del presupuesto.' },
 ]
 
-function ProgressDots({ total, actual }) {
+function Cabecera({ icono, color, titulo, texto }) {
   return (
-    <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginBottom: 32 }}>
-      {Array.from({ length: total }).map((_, i) => (
-        <div key={i} style={{
-          width: i === actual ? 20 : 7,
-          height: 7,
-          borderRadius: 4,
-          background: i === actual ? 'var(--acento)' : 'var(--card-hover)',
-          transition: 'all 0.3s ease',
-        }} />
-      ))}
+    <div style={{ textAlign: 'center', marginBottom: 28 }}>
+      <span className="mosaico xl" style={{ background: color + '26', color, margin: '0 auto 18px' }}>
+        <Icono nombre={icono} size={34} />
+      </span>
+      <h2 className="titulo-2" style={{ marginBottom: 8 }}>{titulo}</h2>
+      <p className="texto-callout" style={{ color: 'var(--texto-secundario)' }}>{texto}</p>
     </div>
   )
 }
 
-function SelectorColor({ valor, onChange }) {
+function Hecho({ titulo, item, texto, onSiguiente }) {
   return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-      {COLORES.map(c => (
-        <button key={c} onClick={() => onChange(c)} style={{
-          width: 30, height: 30, borderRadius: '50%', background: c, border: 'none',
-          cursor: 'pointer', outline: valor === c ? `3px solid ${c}` : '3px solid transparent',
-          outlineOffset: 2, transition: 'outline 0.15s',
-        }} />
-      ))}
+    <div style={{ textAlign: 'center' }}>
+      <span className="mosaico xl" style={{ background: 'var(--ingreso-suave)', color: 'var(--ingreso)', margin: '0 auto 18px' }}>
+        <Icono nombre="check" size={34} grosor={2.4} />
+      </span>
+      <h2 className="titulo-2" style={{ marginBottom: 20 }}>{titulo}</h2>
+      <div className="lista-grupo" style={{ marginBottom: 16, textAlign: 'left' }}>
+        <div className="fila">
+          <span className="mosaico" style={{ background: item.color + '26' }}>
+            <span style={{ width: 12, height: 12, borderRadius: '50%', background: item.color }} />
+          </span>
+          <div className="fila-cuerpo">
+            <p className="fila-titulo" style={{ fontWeight: 500 }}>{item.nombre}</p>
+            <p className="fila-sub">{item.sub}</p>
+          </div>
+        </div>
+      </div>
+      <p className="texto-nota" style={{ marginBottom: 32 }}>{texto}</p>
+      <button onClick={onSiguiente} className="btn-primario">Continuar</button>
     </div>
+  )
+}
+
+function OpcionTipo({ activa, titulo, hint, onClick }) {
+  return (
+    <button type="button" role="radio" aria-checked={activa} onClick={onClick} style={{
+      flex: 1, padding: '12px 10px', borderRadius: 14, textAlign: 'center',
+      background: activa ? 'var(--acento-suave)' : 'var(--card)',
+      boxShadow: activa ? 'inset 0 0 0 1.5px var(--acento)' : 'inset 0 0 0 0.5px var(--borde)',
+      color: activa ? 'var(--acento)' : 'var(--texto-secundario)',
+      transition: 'background-color 180ms ease, box-shadow 180ms ease, color 180ms ease',
+    }}>
+      <p style={{ fontWeight: 600, fontSize: 15 }}>{titulo}</p>
+      {hint && <p style={{ fontSize: 12, opacity: 0.8, marginTop: 2 }}>{hint}</p>}
+    </button>
   )
 }
 
 // ── PASO 1: Bienvenida ────────────────────────────────────────────────────────
 function PasoBienvenida({ username, onSiguiente, onSaltar }) {
   const props = [
-    { icono: '💳', titulo: 'Tus cuentas', desc: 'Bancos, efectivo, deudas — todo en un lugar.' },
-    { icono: '📊', titulo: 'Presupuestos', desc: 'Define límites y ve cuánto llevas en cada categoría.' },
-    { icono: '🔎', titulo: 'Historial claro', desc: 'Busca, filtra por mes y tipo de movimiento.' },
+    { icono: 'tarjeta', color: '#0A84FF', titulo: 'Tus cuentas', desc: 'Bancos, efectivo, deudas — todo en un lugar.' },
+    { icono: 'objetivo', color: '#FF9F0A', titulo: 'Presupuestos', desc: 'Define límites y ve cuánto llevas en cada categoría.' },
+    { icono: 'search', color: '#30D158', titulo: 'Historial claro', desc: 'Busca y filtra por mes y tipo de movimiento.' },
   ]
 
   return (
-    <div style={{ textAlign: 'center' }}>
-      <div style={{
-        width: 80, height: 80, borderRadius: 24, background: 'var(--acento)',
-        margin: '0 auto 24px', display: 'flex', alignItems: 'center',
-        justifyContent: 'center', fontSize: 40,
-        boxShadow: '0 12px 32px rgba(43,127,255,0.35)',
-      }}>
-        💰
+    <div>
+      <div style={{ textAlign: 'center', marginBottom: 32 }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 22 }}><Marca size={76} /></div>
+        <h1 className="titulo-grande" style={{ marginBottom: 10 }}>Hola, {username ? capitalizar(username) : 'bienvenido'}</h1>
+        <p className="texto-callout" style={{ color: 'var(--texto-secundario)' }}>
+          Configuremos FinTracker en unos pasos para que le saques el máximo provecho.
+        </p>
       </div>
-      <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8, letterSpacing: '-0.5px' }}>
-        Hola, {username || 'bienvenido'}
-      </h1>
-      <p style={{ color: 'var(--texto-secundario)', fontSize: 15, lineHeight: '1.6', marginBottom: 32 }}>
-        Te vamos a guiar en 4 pasos para que saques el máximo provecho de FinTracker.
-      </p>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 36, textAlign: 'left' }}>
+      <div className="lista-grupo" style={{ marginBottom: 36 }}>
         {props.map((p, i) => (
-          <div key={i} className="card" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px' }}>
-            <span style={{ fontSize: 24, flexShrink: 0 }}>{p.icono}</span>
-            <div>
-              <p style={{ fontWeight: 600, fontSize: 15 }}>{p.titulo}</p>
-              <p style={{ color: 'var(--texto-secundario)', fontSize: 13, marginTop: 2 }}>{p.desc}</p>
+          <div key={i} className="fila" style={{ '--sangria': '64px', alignItems: 'flex-start', paddingTop: 14, paddingBottom: 14 }}>
+            <span className="mosaico" style={{ background: p.color + '26', color: p.color }}>
+              <Icono nombre={p.icono} size={19} />
+            </span>
+            <div className="fila-cuerpo">
+              <p className="titulo-3" style={{ fontSize: 16 }}>{p.titulo}</p>
+              <p className="texto-nota" style={{ marginTop: 2 }}>{p.desc}</p>
             </div>
           </div>
         ))}
       </div>
 
-      <button onClick={onSiguiente} className="btn-primario" style={{ width: '100%', padding: 15, fontSize: 16, fontWeight: 600 }}>
-        Empezar tour →
-      </button>
-      <button onClick={onSaltar} style={{
-        background: 'none', border: 'none', color: 'var(--texto-terciario)',
-        fontSize: 14, cursor: 'pointer', marginTop: 16, padding: '8px 0',
-      }}>
-        Ya conozco la app, saltar
+      <button onClick={onSiguiente} className="btn-primario">Empezar</button>
+      <button onClick={onSaltar} className="btn-texto" style={{ width: '100%', marginTop: 8, color: 'var(--texto-secundario)' }}>
+        Ya conozco la app
       </button>
     </div>
   )
@@ -113,19 +109,17 @@ function PasoBienvenida({ username, onSiguiente, onSaltar }) {
 
 // ── PASO 2: Primera cuenta ────────────────────────────────────────────────────
 function PasoCuenta({ onSiguiente, onSaltar }) {
-  const [form, setForm] = useState({ nombre: '', tipo: 'activo', balance_inicial: '', color_hex: '#2B7FFF' })
+  const [form, setForm] = useState({ nombre: '', tipo: 'activo', balance_inicial: '', color_hex: '#0A84FF' })
   const [error, setError] = useState('')
   const [cargando, setCargando] = useState(false)
   const [creada, setCreada] = useState(null)
-
-  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
 
   const handleCrear = async () => {
     if (!form.nombre.trim()) { setError('Escribe un nombre para la cuenta.'); return }
     setError('')
     setCargando(true)
     try {
-      const res = await api.post('/cuentas/', { ...form, balance_inicial: parseFloat(form.balance_inicial) || 0 })
+      const res = await api.post('/cuentas/', { ...form, nombre: form.nombre.trim(), balance_inicial: parseFloat(form.balance_inicial) || 0 })
       setCreada(res.data)
     } catch (err) {
       const data = err.response?.data
@@ -136,85 +130,51 @@ function PasoCuenta({ onSiguiente, onSaltar }) {
   }
 
   if (creada) return (
-    <div style={{ textAlign: 'center' }}>
-      <div style={{ fontSize: 56, marginBottom: 16 }}>🎉</div>
-      <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>¡Cuenta creada!</h2>
-      <div className="card" style={{ margin: '20px 0', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ width: 12, height: 12, borderRadius: '50%', background: creada.color_hex, flexShrink: 0 }} />
-        <div style={{ textAlign: 'left' }}>
-          <p style={{ fontWeight: 600 }}>{creada.nombre}</p>
-          <p style={{ fontSize: 13, color: 'var(--texto-secundario)' }}>{creada.tipo === 'pasivo' ? 'Pasivo' : 'Activo'}</p>
-        </div>
-      </div>
-      <p style={{ color: 'var(--texto-secundario)', fontSize: 14, marginBottom: 32 }}>
-        Puedes agregar más cuentas desde la sección Cuentas en cualquier momento.
-      </p>
-      <button onClick={onSiguiente} className="btn-primario" style={{ width: '100%', padding: 14, fontSize: 16 }}>
-        Siguiente →
-      </button>
-    </div>
+    <Hecho
+      titulo="¡Cuenta creada!"
+      item={{ nombre: creada.nombre, color: creada.color_hex, sub: creada.tipo === 'pasivo' ? 'Pasivo' : 'Activo' }}
+      texto="Puedes agregar más cuentas desde la pestaña Cuentas cuando quieras."
+      onSiguiente={onSiguiente}
+    />
   )
 
   return (
     <div>
-      <div style={{ textAlign: 'center', marginBottom: 28 }}>
-        <div style={{ fontSize: 44, marginBottom: 12 }}>🏦</div>
-        <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Tu primera cuenta</h2>
-        <p style={{ color: 'var(--texto-secundario)', fontSize: 14, lineHeight: '1.6' }}>
-          Puede ser tu banco, efectivo, una tarjeta o una deuda. Después podrás crear más.
-        </p>
+      <Cabecera icono="banco" color="#0A84FF" titulo="Tu primera cuenta"
+        texto="Puede ser tu banco, efectivo, una tarjeta o una deuda. Después podrás crear más." />
+
+      <div className="campo">
+        <label className="label" htmlFor="ob-cuenta">Nombre</label>
+        <input id="ob-cuenta" className="input" placeholder="Ej: Bancolombia, Efectivo, Nequi…" value={form.nombre}
+          onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} autoCapitalize="words" enterKeyHint="next" />
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div>
-          <label className="label" style={{ marginBottom: 6, display: 'block' }}>Nombre</label>
-          <input className="input" placeholder="Ej: Bancolombia, Efectivo, Nequi..." value={form.nombre} onChange={set('nombre')} />
+      <div className="campo">
+        <p className="label">Tipo</p>
+        <div role="radiogroup" aria-label="Tipo de cuenta" style={{ display: 'flex', gap: 8 }}>
+          <OpcionTipo activa={form.tipo === 'activo'} titulo="Activo" hint="Dinero que tienes" onClick={() => setForm(f => ({ ...f, tipo: 'activo' }))} />
+          <OpcionTipo activa={form.tipo === 'pasivo'} titulo="Pasivo" hint="Deuda o crédito" onClick={() => setForm(f => ({ ...f, tipo: 'pasivo' }))} />
         </div>
-
-        <div>
-          <label className="label" style={{ marginBottom: 6, display: 'block' }}>Tipo</label>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {[['activo', '📈 Activo', 'Dinero que tienes'], ['pasivo', '📉 Pasivo', 'Deuda o crédito']].map(([val, label, hint]) => (
-              <button key={val} onClick={() => setForm(f => ({ ...f, tipo: val }))} style={{
-                flex: 1, padding: '10px 8px', borderRadius: 12, cursor: 'pointer',
-                background: form.tipo === val ? 'var(--acento-suave)' : 'var(--card)',
-                border: form.tipo === val ? '1.5px solid var(--acento)' : '0.5px solid var(--borde)',
-                color: form.tipo === val ? 'var(--acento)' : 'var(--texto-secundario)',
-                textAlign: 'center',
-              }}>
-                <p style={{ fontWeight: 600, fontSize: 13 }}>{label}</p>
-                <p style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>{hint}</p>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className="label" style={{ marginBottom: 6, display: 'block' }}>Balance inicial</label>
-          <input className="input" type="number" placeholder="0" value={form.balance_inicial} onChange={set('balance_inicial')} />
-        </div>
-
-        <div>
-          <label className="label" style={{ marginBottom: 8, display: 'block' }}>Color</label>
-          <SelectorColor valor={form.color_hex} onChange={c => setForm(f => ({ ...f, color_hex: c }))} />
-        </div>
-
-        {error && (
-          <p style={{ color: 'var(--gasto)', fontSize: 13, background: 'var(--gasto-suave)', padding: '10px 14px', borderRadius: 10 }}>
-            {error}
-          </p>
-        )}
       </div>
 
-      <div style={{ marginTop: 28 }}>
-        <button onClick={handleCrear} disabled={cargando} className="btn-primario" style={{ width: '100%', padding: 14, fontSize: 16, marginBottom: 12 }}>
-          {cargando ? 'Creando...' : 'Crear cuenta'}
+      <div className="campo">
+        <label className="label" htmlFor="ob-balance">Saldo actual</label>
+        <CampoMonto id="ob-balance" valor={form.balance_inicial} onChange={v => setForm(f => ({ ...f, balance_inicial: v }))} />
+      </div>
+
+      <div className="campo">
+        <p className="label">Color</p>
+        <SelectorColor colores={COLORES} valor={form.color_hex} onChange={c => setForm(f => ({ ...f, color_hex: c }))} />
+      </div>
+
+      <AvisoError>{error}</AvisoError>
+
+      <div style={{ marginTop: 24 }}>
+        <button onClick={handleCrear} disabled={cargando} className="btn-primario">
+          {cargando ? 'Creando…' : 'Crear cuenta'}
         </button>
-        <button onClick={onSaltar} style={{
-          width: '100%', background: 'none', border: 'none',
-          color: 'var(--texto-terciario)', fontSize: 14, cursor: 'pointer', padding: '8px 0',
-        }}>
-          Saltar este paso
+        <button onClick={onSaltar} className="btn-texto" style={{ width: '100%', marginTop: 8, color: 'var(--texto-secundario)' }}>
+          Omitir por ahora
         </button>
       </div>
     </div>
@@ -228,14 +188,12 @@ function PasoCategoria({ onSiguiente, onSaltar }) {
   const [cargando, setCargando] = useState(false)
   const [creada, setCreada] = useState(null)
 
-  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
-
   const handleCrear = async () => {
     if (!form.nombre.trim()) { setError('Escribe un nombre para la categoría.'); return }
     setError('')
     setCargando(true)
     try {
-      const res = await api.post('/categorias/', form)
+      const res = await api.post('/categorias/', { ...form, nombre: form.nombre.trim() })
       setCreada(res.data)
     } catch (err) {
       const data = err.response?.data
@@ -246,83 +204,48 @@ function PasoCategoria({ onSiguiente, onSaltar }) {
   }
 
   if (creada) return (
-    <div style={{ textAlign: 'center' }}>
-      <div style={{ fontSize: 56, marginBottom: 16 }}>🏷️</div>
-      <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>¡Categoría lista!</h2>
-      <div className="card" style={{ margin: '20px 0', padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ width: 12, height: 12, borderRadius: '50%', background: creada.color_hex, flexShrink: 0 }} />
-        <div style={{ textAlign: 'left' }}>
-          <p style={{ fontWeight: 600 }}>{creada.nombre}</p>
-          <p style={{ fontSize: 13, color: 'var(--texto-secundario)' }}>{creada.tipo === 'ingreso' ? 'Ingreso' : 'Gasto'}</p>
-        </div>
-      </div>
-      <p style={{ color: 'var(--texto-secundario)', fontSize: 14, marginBottom: 32 }}>
-        Crea más categorías desde la sección Presupuesto. Úsalas para clasificar cada movimiento.
-      </p>
-      <button onClick={onSiguiente} className="btn-primario" style={{ width: '100%', padding: 14, fontSize: 16 }}>
-        Siguiente →
-      </button>
-    </div>
+    <Hecho
+      titulo="¡Categoría lista!"
+      item={{ nombre: creada.nombre, color: creada.color_hex, sub: creada.tipo === 'ingreso' ? 'Ingreso' : 'Gasto' }}
+      texto="Crea más desde Presupuesto y úsalas para clasificar cada movimiento."
+      onSiguiente={onSiguiente}
+    />
   )
 
   return (
     <div>
-      <div style={{ textAlign: 'center', marginBottom: 28 }}>
-        <div style={{ fontSize: 44, marginBottom: 12 }}>🏷️</div>
-        <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Organiza tus movimientos</h2>
-        <p style={{ color: 'var(--texto-secundario)', fontSize: 14, lineHeight: '1.6' }}>
-          Las categorías te permiten clasificar tus transacciones y ver en qué gastas o ganas más.
-        </p>
+      <Cabecera icono="etiqueta" color="#FF9F0A" titulo="Organiza tus movimientos"
+        texto="Las categorías clasifican tus transacciones y muestran en qué gastas o ganas más." />
+
+      <div className="campo">
+        <label className="label" htmlFor="ob-cat">Nombre</label>
+        <input id="ob-cat" className="input" placeholder="Ej: Comida, Transporte, Salario…" value={form.nombre}
+          onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} autoCapitalize="sentences" enterKeyHint="next" />
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div>
-          <label className="label" style={{ marginBottom: 6, display: 'block' }}>Nombre</label>
-          <input className="input" placeholder="Ej: Comida, Transporte, Salario..." value={form.nombre} onChange={set('nombre')} />
+      <div className="campo">
+        <p className="label">Tipo</p>
+        <div role="radiogroup" aria-label="Tipo de categoría" style={{ display: 'flex', gap: 8 }}>
+          <OpcionTipo activa={form.tipo === 'gasto'} titulo="Gasto"
+            onClick={() => setForm(f => ({ ...f, tipo: 'gasto', color_hex: '#FF453A' }))} />
+          <OpcionTipo activa={form.tipo === 'ingreso'} titulo="Ingreso"
+            onClick={() => setForm(f => ({ ...f, tipo: 'ingreso', color_hex: '#30D158' }))} />
         </div>
-
-        <div>
-          <label className="label" style={{ marginBottom: 6, display: 'block' }}>Tipo</label>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {[['gasto', '↓ Gasto'], ['ingreso', '↑ Ingreso']].map(([val, label]) => (
-              <button key={val} onClick={() => setForm(f => ({
-                ...f,
-                tipo: val,
-                color_hex: val === 'gasto' ? '#FF453A' : '#30D158',
-              }))} style={{
-                flex: 1, padding: '10px 8px', borderRadius: 12, cursor: 'pointer',
-                background: form.tipo === val ? 'var(--acento-suave)' : 'var(--card)',
-                border: form.tipo === val ? '1.5px solid var(--acento)' : '0.5px solid var(--borde)',
-                color: form.tipo === val ? 'var(--acento)' : 'var(--texto-secundario)',
-                fontWeight: 600, fontSize: 14,
-              }}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className="label" style={{ marginBottom: 8, display: 'block' }}>Color</label>
-          <SelectorColor valor={form.color_hex} onChange={c => setForm(f => ({ ...f, color_hex: c }))} />
-        </div>
-
-        {error && (
-          <p style={{ color: 'var(--gasto)', fontSize: 13, background: 'var(--gasto-suave)', padding: '10px 14px', borderRadius: 10 }}>
-            {error}
-          </p>
-        )}
       </div>
 
-      <div style={{ marginTop: 28 }}>
-        <button onClick={handleCrear} disabled={cargando} className="btn-primario" style={{ width: '100%', padding: 14, fontSize: 16, marginBottom: 12 }}>
-          {cargando ? 'Creando...' : 'Crear categoría'}
+      <div className="campo">
+        <p className="label">Color</p>
+        <SelectorColor colores={COLORES} valor={form.color_hex} onChange={c => setForm(f => ({ ...f, color_hex: c }))} />
+      </div>
+
+      <AvisoError>{error}</AvisoError>
+
+      <div style={{ marginTop: 24 }}>
+        <button onClick={handleCrear} disabled={cargando} className="btn-primario">
+          {cargando ? 'Creando…' : 'Crear categoría'}
         </button>
-        <button onClick={onSaltar} style={{
-          width: '100%', background: 'none', border: 'none',
-          color: 'var(--texto-terciario)', fontSize: 14, cursor: 'pointer', padding: '8px 0',
-        }}>
-          Saltar este paso
+        <button onClick={onSaltar} className="btn-texto" style={{ width: '100%', marginTop: 8, color: 'var(--texto-secundario)' }}>
+          Omitir por ahora
         </button>
       </div>
     </div>
@@ -331,55 +254,26 @@ function PasoCategoria({ onSiguiente, onSaltar }) {
 
 // ── PASO 4: Tour de la app ────────────────────────────────────────────────────
 function PasoTour({ onSiguiente }) {
-  const [activo, setActivo] = useState(0)
-
   return (
     <div>
-      <div style={{ textAlign: 'center', marginBottom: 28 }}>
-        <div style={{ fontSize: 44, marginBottom: 12 }}>🗺️</div>
-        <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Conoce tu app</h2>
-        <p style={{ color: 'var(--texto-secundario)', fontSize: 14, lineHeight: '1.6' }}>
-          FinTracker tiene 4 secciones principales. Toca cada una para explorarla.
-        </p>
-      </div>
+      <Cabecera icono="mapa" color="#30D158" titulo="Conoce tu app"
+        texto="Estas son las secciones principales de FinTracker." />
 
-      {/* Cards del tour */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
+      <div className="lista-grupo" style={{ marginBottom: 32 }}>
         {TOUR.map((item, i) => (
-          <button key={i} onClick={() => setActivo(i === activo ? -1 : i)} style={{
-            background: 'var(--card)', border: activo === i ? '1.5px solid var(--acento)' : '0.5px solid var(--borde)',
-            borderRadius: 16, padding: '16px 18px', cursor: 'pointer', textAlign: 'left',
-            transition: 'all 0.2s',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{
-                width: 42, height: 42, borderRadius: 12, flexShrink: 0,
-                background: activo === i ? 'var(--acento-suave)' : 'var(--card-hover)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
-              }}>
-                {item.icono}
-              </div>
-              <div style={{ flex: 1 }}>
-                <p style={{ fontWeight: 600, fontSize: 15, color: activo === i ? 'var(--acento)' : 'var(--texto-primario)' }}>
-                  {item.titulo}
-                </p>
-                {activo === i && (
-                  <p style={{ color: 'var(--texto-secundario)', fontSize: 13, marginTop: 4, lineHeight: '1.5' }}>
-                    {item.desc}
-                  </p>
-                )}
-              </div>
-              <span style={{ color: 'var(--texto-terciario)', fontSize: 18, fontWeight: 300 }}>
-                {activo === i ? '−' : '+'}
-              </span>
+          <div key={i} className="fila" style={{ '--sangria': '58px', alignItems: 'flex-start', paddingTop: 14, paddingBottom: 14 }}>
+            <span className="mosaico sm" style={{ background: item.color, color: '#fff', marginTop: 1 }}>
+              <Icono nombre={item.icono} size={16} grosor={2} />
+            </span>
+            <div className="fila-cuerpo">
+              <p className="titulo-3" style={{ fontSize: 16 }}>{item.titulo}</p>
+              <p className="texto-nota" style={{ marginTop: 2 }}>{item.desc}</p>
             </div>
-          </button>
+          </div>
         ))}
       </div>
 
-      <button onClick={onSiguiente} className="btn-primario" style={{ width: '100%', padding: 14, fontSize: 16 }}>
-        Ya lo tengo →
-      </button>
+      <button onClick={onSiguiente} className="btn-primario">Continuar</button>
     </div>
   )
 }
@@ -387,31 +281,25 @@ function PasoTour({ onSiguiente }) {
 // ── PASO 5: ¡Listo! ───────────────────────────────────────────────────────────
 function PasoListo({ username, onEntrar }) {
   return (
-    <div style={{ textAlign: 'center' }}>
-      <div style={{ fontSize: 64, marginBottom: 20 }}>🚀</div>
-      <h2 style={{ fontSize: 26, fontWeight: 800, marginBottom: 12 }}>¡Todo listo, {username || ''}!</h2>
-      <p style={{ color: 'var(--texto-secundario)', fontSize: 15, lineHeight: '1.7', marginBottom: 36 }}>
-        Ya tienes todo configurado para empezar. Registra tu primera transacción tocando el botón <strong>+</strong> en la barra inferior.
-      </p>
+    <div>
+      <Cabecera icono="cohete" color="#BF5AF2" titulo={`¡Todo listo${username ? `, ${capitalizar(username)}` : ''}!`}
+        texto="Registra tu primera transacción con el botón + de la barra inferior." />
 
-      <div className="card" style={{ padding: '16px 20px', marginBottom: 32, textAlign: 'left' }}>
+      <div className="lista-grupo" style={{ marginBottom: 32 }}>
         {[
-          ['➕', 'Toca + para nueva transacción'],
-          ['🏦', 'Gestiona cuentas desde la pestaña Cuentas'],
-          ['🎯', 'Define presupuestos por categoría'],
-          ['🔐', 'Vincula Face ID desde Configuración'],
-        ].map(([icon, text], i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0',
-            borderBottom: i < 3 ? '0.5px solid var(--separador)' : 'none' }}>
-            <span style={{ fontSize: 18, flexShrink: 0 }}>{icon}</span>
-            <p style={{ fontSize: 14, color: 'var(--texto-secundario)' }}>{text}</p>
+          ['plus', 'Toca + para una nueva transacción'],
+          ['tarjeta', 'Gestiona tus cuentas en la pestaña Cuentas'],
+          ['objetivo', 'Define presupuestos por categoría'],
+          ['face-id', 'Vincula Face ID desde Configuración'],
+        ].map(([icono, texto], i) => (
+          <div key={i} className="fila" style={{ '--sangria': '52px', minHeight: 48 }}>
+            <span style={{ color: 'var(--acento)', display: 'flex', width: 24, justifyContent: 'center' }}><Icono nombre={icono} size={19} /></span>
+            <p className="texto-callout" style={{ flex: 1 }}>{texto}</p>
           </div>
         ))}
       </div>
 
-      <button onClick={onEntrar} className="btn-primario" style={{ width: '100%', padding: 16, fontSize: 17, fontWeight: 700 }}>
-        Entrar al dashboard
-      </button>
+      <button onClick={onEntrar} className="btn-primario">Ir al inicio</button>
     </div>
   )
 }
@@ -419,22 +307,43 @@ function PasoListo({ username, onEntrar }) {
 // ── Página principal de Onboarding ────────────────────────────────────────────
 const TOTAL_PASOS = 5
 
+function ProgressDots({ total, actual }) {
+  return (
+    <div role="progressbar" aria-valuemin={1} aria-valuemax={total} aria-valuenow={actual + 1}
+      aria-label={`Paso ${actual + 1} de ${total}`} style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+      {Array.from({ length: total }).map((_, i) => (
+        <span key={i} style={{
+          width: i === actual ? 20 : 7,
+          height: 7,
+          borderRadius: 4,
+          background: i <= actual ? 'var(--acento)' : 'var(--card-hover)',
+          opacity: i < actual ? 0.45 : 1,
+          transition: 'width 300ms var(--ease-out), background-color 300ms ease, opacity 300ms ease',
+        }} />
+      ))}
+    </div>
+  )
+}
+
 export default function Onboarding() {
   const navigate = useNavigate()
+  const reducir = useReducedMotion()
   const [paso, setPaso] = useState(0)
+  const [direccion, setDireccion] = useState(1)
   const [username, setUsername] = useState('')
 
   useEffect(() => {
     api.get('/perfil/').then(res => setUsername(res.data?.username || '')).catch(() => {})
   }, [])
 
-  const siguiente = () => setPaso(p => Math.min(p + 1, TOTAL_PASOS - 1))
-
-  const saltar = () => {
-    // Si quedan 2 o más pasos, saltar al tour; si está en el tour, saltar a listo
-    if (paso <= 2) setPaso(3)
-    else setPaso(4)
+  const irA = (n) => {
+    setDireccion(n > paso ? 1 : -1)
+    setPaso(Math.max(0, Math.min(n, TOTAL_PASOS - 1)))
+    window.scrollTo({ top: 0 })
   }
+  const siguiente = () => irA(paso + 1)
+  // Si quedan pasos de configuración, saltar al tour; si está en el tour, a listo
+  const saltar = () => irA(paso <= 2 ? 3 : 4)
 
   const terminar = () => {
     localStorage.setItem('ft_ob_done', 'true')
@@ -452,16 +361,48 @@ export default function Onboarding() {
     }
   }
 
+  // Avanzar entra desde la derecha y sale por la izquierda; retroceder, al revés
+  const variantes = {
+    entra: (d) => ({ opacity: 0, x: reducir ? 0 : 28 * d }),
+    centro: { opacity: 1, x: 0 },
+    sale: (d) => ({ opacity: 0, x: reducir ? 0 : -28 * d }),
+  }
+
   return (
     <div style={{
-      minHeight: '100vh',
+      minHeight: '100dvh',
       background: 'var(--fondo)',
-      padding: '56px 20px 40px',
+      padding: 'calc(var(--safe-top) + 12px) 20px calc(var(--safe-bottom) + 32px)',
       maxWidth: 430,
       margin: '0 auto',
+      overflowX: 'hidden',
     }}>
-      <ProgressDots total={TOTAL_PASOS} actual={paso} />
-      {pasoActual()}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', minHeight: 44, marginBottom: 20 }}>
+        <div>
+          {paso > 0 && (
+            <button className="btn-atras" onClick={() => irA(paso - 1)} aria-label="Paso anterior" style={{ marginLeft: -8 }}>
+              <Icono nombre="chevron-left" size={24} grosor={2.2} />
+              Atrás
+            </button>
+          )}
+        </div>
+        <ProgressDots total={TOTAL_PASOS} actual={paso} />
+        <div />
+      </div>
+
+      <AnimatePresence mode="wait" custom={direccion} initial={false}>
+        <motion.div
+          key={paso}
+          custom={direccion}
+          variants={variantes}
+          initial="entra"
+          animate="centro"
+          exit="sale"
+          transition={{ type: 'spring', bounce: 0, visualDuration: 0.28 }}
+        >
+          {pasoActual()}
+        </motion.div>
+      </AnimatePresence>
     </div>
   )
 }

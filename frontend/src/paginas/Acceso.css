@@ -1,0 +1,87 @@
+/* Pantallas de acceso (login / registro): a pantalla completa, sin tarjeta flotante */
+
+.acceso {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: calc(var(--safe-top) + 32px) 24px calc(var(--safe-bottom) + 32px);
+  background:
+    radial-gradient(90% 50% at 50% 0%, rgba(10, 132, 255, 0.16) 0%, transparent 70%),
+    var(--fondo);
+}
+
+.acceso-contenido {
+  width: 100%;
+  max-width: 380px;
+  margin: 0 auto;
+}
+
+.acceso-cabecera {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 36px;
+}
+
+.acceso-separador {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 22px 0;
+  color: var(--texto-terciario);
+  font-size: 0.8125rem;
+}
+.acceso-separador::before,
+.acceso-separador::after {
+  content: '';
+  flex: 1;
+  height: 0.5px;
+  background: var(--separador);
+}
+
+.acceso-pie {
+  margin-top: 32px;
+  text-align: center;
+  color: var(--texto-secundario);
+}
+
+.acceso-enlace {
+  color: var(--acento);
+  text-decoration: none;
+  font-weight: 600;
+  padding: 10px 4px;
+  margin: -10px -4px;
+}
+.acceso-enlace:active { opacity: 0.5; }
+
+/* Éxito del registro: un check que se dibuja una sola vez */
+.check-exito {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ingreso-suave);
+  color: var(--ingreso);
+  animation: check-pop 420ms var(--ease-out) both;
+}
+.check-exito path {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  animation: check-trazo 360ms var(--ease-out) 180ms forwards;
+}
+@keyframes check-pop {
+  from { opacity: 0; transform: scale(0.85); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes check-trazo {
+  to { stroke-dashoffset: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .check-exito { animation: fundido 200ms ease both; }
+  .check-exito path { animation: none; stroke-dashoffset: 0; }
+}

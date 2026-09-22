@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react'
+import { toast } from 'sonner'
 import api, { ensureArray, ensureObject } from '../api'
-
-const formatCOP = (n) =>
-  new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(n)
+import Pagina from '../componentes/Pagina'
+import Icono from '../componentes/Icono'
+import Sheet, { ConfirmarSheet } from '../componentes/Sheet'
+import { AvisoError, CampoMonto, EstadoVacio, Segmentado, SelectorColor } from '../componentes/Controles'
+import { formatCOP } from '../utils/formato'
 
 const COLORES = ['#34C759', '#0A84FF', '#BF5AF2', '#FF9F0A', '#FFD60A', '#FF453A', '#64D2FF', '#FF375F']
 const FORM_VACIO = { nombre: '', tipo: 'gasto', presupuesto_mensual: '', color_hex: '#0A84FF' }
@@ -12,6 +15,19 @@ const TIPOS = [
   { valor: 'ingreso', etiqueta: 'Ingresos' },
   { valor: 'ahorro',  etiqueta: 'Ahorros' },
 ]
+const TIPOS_FORM = [
+  { valor: 'gasto',   etiqueta: 'Gasto' },
+  { valor: 'ingreso', etiqueta: 'Ingreso' },
+  { valor: 'ahorro',  etiqueta: 'Ahorro' },
+]
+
+function Barra({ pct, color }) {
+  return (
+    <div className="progress-track" role="presentation">
+      <div className="progress-fill" style={{ transform: `scaleX(${(pct ?? 0) / 100})`, background: color }} />
+    </div>
+  )
+}
 
 export default function Presupuesto() {
   const [categorias, setCategorias] = useState([])
@@ -25,9 +41,11 @@ export default function Presupuesto() {
   const [guardando, setGuardando] = useState(false)
   const [errorForm, setErrorForm] = useState('')
 
-  const [confirmEliminar, setConfirmEliminar] = useState(null)
+  const [confirmAbierto, setConfirmAbierto] = useState(false)
   const [eliminando, setEliminando] = useState(false)
-  const [errorEliminar, setErrorEliminar] = useState('')
+
+  // Las barras crecen desde 0 una vez cargados los datos
+  const [listo, setListo] = useState(false)
 
   const cargar = async () => {
     try {
@@ -45,6 +63,12 @@ export default function Presupuesto() {
   }
 
   useEffect(() => { cargar() }, [])
+
+  useEffect(() => {
+    if (cargando) return
+    const raf = requestAnimationFrame(() => setListo(true))
+    return () => cancelAnimationFrame(raf)
+  }, [cargando])
 
   // Notificar presupuestos excedidos (una vez por sesión)
   useEffect(() => {
@@ -64,15 +88,15 @@ export default function Presupuesto() {
       )
       if (excedidas.length > 0) {
         const nombres = excedidas.map(c => c.nombre).join(', ')
-        mostrarNotif('⚠️ Presupuesto excedido', `Superaste el límite en: ${nombres}`)
+        mostrarNotif('Presupuesto excedido', `Superaste el límite en: ${nombres}`)
       } else if (al80.length > 0) {
         const nombres = al80.map(c => c.nombre).join(', ')
-        mostrarNotif('📊 Presupuesto al límite', `Llevas más del 80% en: ${nombres}`)
+        mostrarNotif('Presupuesto al límite', `Llevas más del 80% en: ${nombres}`)
       }
     })
   }, [cargando, categorias, gastosMes, filtroTipo])
 
-  const cerrarModal = () => { setModalAbierto(false); setErrorForm(''); setEditandoId(null) }
+  const cerrarModal = () => { setModalAbierto(false); setErrorForm('') }
 
   const abrirNueva = () => {
     setForm({ ...FORM_VACIO, tipo: filtroTipo })
@@ -85,7 +109,7 @@ export default function Presupuesto() {
     setForm({
       nombre: cat.nombre,
       tipo: cat.tipo,
-      presupuesto_mensual: cat.presupuesto_mensual ?? '',
+      presupuesto_mensual: cat.presupuesto_mensual != null ? String(cat.presupuesto_mensual) : '',
       color_hex: cat.color_hex,
     })
     setEditandoId(cat.id)
@@ -111,6 +135,7 @@ export default function Presupuesto() {
       }
       await cargar()
       cerrarModal()
+      toast.success(editandoId ? 'Categoría actualizada' : 'Categoría creada', { description: datos.nombre })
     } catch (err) {
       const d = err.response?.data
       setErrorForm(d?.nombre ? 'Ya tienes una categoría con ese nombre.' : d?.detail ?? 'Error al guardar.')
@@ -119,15 +144,18 @@ export default function Presupuesto() {
     }
   }
 
-  const eliminar = async (id) => {
+  const eliminar = async () => {
+    if (!editandoId) return
     setEliminando(true)
-    setErrorEliminar('')
     try {
-      await api.delete(`/categorias/${id}/`)
-      setConfirmEliminar(null)
+      await api.delete(`/categorias/${editandoId}/`)
+      setConfirmAbierto(false)
+      cerrarModal()
       await cargar()
+      toast.success('Categoría eliminada')
     } catch {
-      setErrorEliminar('No se pudo eliminar.')
+      setConfirmAbierto(false)
+      toast.error('No se pudo eliminar la categoría')
     } finally {
       setEliminando(false)
     }
@@ -135,271 +163,165 @@ export default function Presupuesto() {
 
   const categoriasFiltradas = categorias.filter(c => c.tipo === filtroTipo)
 
-  // Resumen total solo para gastos con presupuesto asignado
+  // Resumen total solo para categorías con presupuesto asignado
   const conPresupuesto = categoriasFiltradas.filter(c => c.presupuesto_mensual)
   const totalPresupuesto = conPresupuesto.reduce((s, c) => s + c.presupuesto_mensual, 0)
   const totalGastado     = conPresupuesto.reduce((s, c) => s + (gastosMes[c.id] || 0), 0)
   const pctTotal         = totalPresupuesto > 0 ? Math.min((totalGastado / totalPresupuesto) * 100, 100) : null
   const totalExcedido    = totalPresupuesto > 0 && totalGastado > totalPresupuesto
+  const etiquetaTipo     = TIPOS.find(t => t.valor === filtroTipo)?.etiqueta.toLowerCase()
 
   return (
-    <div className="pagina">
-
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <h1 className="titulo-seccion" style={{ margin: 0 }}>Presupuesto</h1>
-        <button onClick={abrirNueva} style={{
-          background: 'var(--acento)', color: '#fff', border: 'none',
-          borderRadius: 20, padding: '8px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer',
-        }}>
-          + Categoría
+    <Pagina
+      titulo="Presupuesto"
+      atras={{ etiqueta: 'Gráficas', a: '/graficas' }}
+      acciones={
+        <button onClick={abrirNueva} className="btn-icono acento" aria-label="Nueva categoría">
+          <Icono nombre="plus" size={20} grosor={2.2} />
         </button>
+      }
+    >
+      <div style={{ marginBottom: 20 }}>
+        <Segmentado etiqueta="Tipo de categoría" opciones={TIPOS} valor={filtroTipo} onChange={setFiltroTipo} />
       </div>
 
-      {/* Filtro tipo */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-        {TIPOS.map(f => (
-          <button key={f.valor} onClick={() => setFiltroTipo(f.valor)} style={{
-            flex: 1,
-            background: filtroTipo === f.valor ? 'var(--acento)' : 'var(--card)',
-            color: filtroTipo === f.valor ? '#fff' : 'var(--texto-secundario)',
-            border: '0.5px solid var(--borde)', borderRadius: 20,
-            padding: '9px 4px', fontSize: 13, fontWeight: filtroTipo === f.valor ? 600 : 400,
-            cursor: 'pointer', transition: 'all 0.15s',
-          }}>
-            {f.etiqueta}
-          </button>
-        ))}
-      </div>
-
-      {/* Resumen total del mes (solo si hay categorías con presupuesto) */}
+      {/* Resumen del mes */}
       {!cargando && pctTotal !== null && filtroTipo === 'gasto' && (
-        <div className="card" style={{ marginBottom: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-            <p style={{ fontSize: 13, color: 'var(--texto-secundario)', fontWeight: 500 }}>
-              Total del mes
-            </p>
-            <p style={{ fontSize: 13, fontWeight: 700, color: totalExcedido ? 'var(--gasto)' : 'var(--texto-primario)' }}>
+        <section className="card aparecer" style={{ marginBottom: 24 }} aria-label="Total del mes">
+          <p className="texto-nota" style={{ marginBottom: 4 }}>Gastado este mes</p>
+          <p style={{ marginBottom: 14 }}>
+            <span className="cifra-hero" style={{ fontSize: 28, color: totalExcedido ? 'var(--gasto)' : 'var(--texto-primario)' }}>
               {formatCOP(totalGastado)}
-              <span style={{ fontWeight: 400, color: 'var(--texto-terciario)' }}> / {formatCOP(totalPresupuesto)}</span>
-            </p>
-          </div>
-          <div style={{ height: 8, background: 'rgba(255,255,255,0.07)', borderRadius: 4, overflow: 'hidden' }}>
-            <div style={{
-              height: '100%', width: `${pctTotal}%`,
-              background: totalExcedido ? 'var(--gasto)' : 'var(--acento)',
-              borderRadius: 4, transition: 'width 0.5s ease',
-            }} />
-          </div>
-          {totalExcedido && (
-            <p style={{ fontSize: 12, color: 'var(--gasto)', marginTop: 8 }}>
-              Excediste el presupuesto por {formatCOP(totalGastado - totalPresupuesto)}
-            </p>
-          )}
-        </div>
+            </span>
+            <span className="texto-nota cifra"> de {formatCOP(totalPresupuesto)}</span>
+          </p>
+          <Barra pct={listo ? pctTotal : 0} color={totalExcedido ? 'var(--gasto)' : 'var(--acento)'} />
+          <p className="texto-mini" style={{ marginTop: 8, color: totalExcedido ? 'var(--gasto)' : undefined }}>
+            {totalExcedido
+              ? `Te pasaste por ${formatCOP(totalGastado - totalPresupuesto)}`
+              : `Te quedan ${formatCOP(totalPresupuesto - totalGastado)}`}
+          </p>
+        </section>
       )}
 
-      {/* Lista */}
       {cargando ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="lista-grupo" aria-busy="true">
           {[1, 2, 3].map(i => (
-            <div key={i} style={{ height: 90, background: 'var(--card)', borderRadius: 22, opacity: 0.4 }} />
+            <div key={i} className="fila" style={{ minHeight: 76 }}>
+              <div className="skeleton" style={{ width: 36, height: 36 }} />
+              <div className="fila-cuerpo">
+                <div className="skeleton" style={{ height: 13, width: '50%', marginBottom: 10 }} />
+                <div className="skeleton" style={{ height: 6 }} />
+              </div>
+            </div>
           ))}
         </div>
       ) : categoriasFiltradas.length === 0 ? (
-        <div style={{ textAlign: 'center', marginTop: 60 }}>
-          <p style={{ fontSize: 40, marginBottom: 12 }}>📂</p>
-          <p style={{ color: 'var(--texto-secundario)', fontSize: 16, fontWeight: 500 }}>
-            Sin categorías de {filtroTipo}
-          </p>
-          <p style={{ color: 'var(--texto-terciario)', fontSize: 13, marginTop: 6 }}>
-            Toca "+ Categoría" para crear la primera
-          </p>
-        </div>
+        <EstadoVacio
+          icono="etiqueta"
+          titulo={`Sin categorías de ${etiquetaTipo}`}
+          texto="Las categorías clasifican tus movimientos y te dejan poner un límite mensual."
+          accion={<button className="btn-primario" onClick={abrirNueva}><Icono nombre="plus" size={18} grosor={2.4} />Nueva categoría</button>}
+        />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="lista-grupo aparecer">
           {categoriasFiltradas.map(cat => {
             const gastado  = gastosMes[cat.id] || 0
-            const pct      = cat.presupuesto_mensual
-              ? Math.min((gastado / cat.presupuesto_mensual) * 100, 100)
-              : null
+            const pct      = cat.presupuesto_mensual ? Math.min((gastado / cat.presupuesto_mensual) * 100, 100) : null
             const excedido = cat.presupuesto_mensual && gastado > cat.presupuesto_mensual
-            const esConfirm = confirmEliminar === cat.id
 
             return (
-              <div key={cat.id} className="card" style={{ padding: '18px 20px' }}>
-
-                {/* Fila nombre + monto */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-                  <div style={{
-                    width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-                    background: cat.color_hex + '22',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: cat.color_hex }} />
+              <button key={cat.id} className="fila" style={{ '--sangria': '64px', minHeight: 76, alignItems: 'flex-start', paddingTop: 14, paddingBottom: 14 }} onClick={() => abrirEditar(cat)}>
+                <span className="mosaico" style={{ background: cat.color_hex + '26' }}>
+                  <span style={{ width: 12, height: 12, borderRadius: '50%', background: cat.color_hex }} />
+                </span>
+                <div className="fila-cuerpo">
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: pct !== null ? 8 : 0 }}>
+                    <p className="fila-titulo" style={{ flex: 1, fontWeight: 500 }}>{cat.nombre}</p>
+                    {excedido && (
+                      <span className="etiqueta" style={{ background: 'var(--gasto-suave)', color: 'var(--gasto)' }}>Excedido</span>
+                    )}
                   </div>
-                  <p style={{ flex: 1, fontWeight: 600, fontSize: 15 }}>{cat.nombre}</p>
-                  {cat.presupuesto_mensual ? (
-                    <p style={{ fontSize: 13, fontWeight: 600, color: excedido ? 'var(--gasto)' : 'var(--texto-secundario)', flexShrink: 0 }}>
-                      {formatCOP(gastado)}
-                      <span style={{ fontWeight: 400, color: 'var(--texto-terciario)' }}> / {formatCOP(cat.presupuesto_mensual)}</span>
-                    </p>
+                  {pct !== null ? (
+                    <>
+                      <Barra pct={listo ? pct : 0} color={excedido ? 'var(--gasto)' : cat.color_hex} />
+                      <p className="texto-mini cifra" style={{ marginTop: 6 }}>
+                        <span style={{ color: excedido ? 'var(--gasto)' : 'var(--texto-secundario)', fontWeight: 600 }}>{formatCOP(gastado)}</span>
+                        {' '}de {formatCOP(cat.presupuesto_mensual)}
+                      </p>
+                    </>
                   ) : (
-                    <p style={{ fontSize: 12, color: 'var(--texto-terciario)', flexShrink: 0 }}>
-                      {gastado > 0 ? formatCOP(gastado) : 'Sin límite'}
-                    </p>
+                    <p className="fila-sub cifra">{gastado > 0 ? `${formatCOP(gastado)} · sin límite` : 'Sin límite mensual'}</p>
                   )}
                 </div>
-
-                {/* Barra de progreso */}
-                {pct !== null && (
-                  <div style={{ height: 5, background: 'rgba(255,255,255,0.07)', borderRadius: 3, marginBottom: 14, overflow: 'hidden' }}>
-                    <div style={{
-                      height: '100%', width: `${pct}%`,
-                      background: excedido ? 'var(--gasto)' : cat.color_hex,
-                      borderRadius: 3, transition: 'width 0.4s ease',
-                    }} />
-                  </div>
-                )}
-                {pct === null && (
-                  <div style={{ height: 5, background: 'rgba(255,255,255,0.04)', borderRadius: 3, marginBottom: 14 }} />
-                )}
-
-                {/* Confirmación de eliminar */}
-                {esConfirm ? (
-                  <div style={{ background: 'var(--gasto-suave)', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <p style={{ flex: 1, fontSize: 13 }}>¿Eliminar esta categoría?</p>
-                    {errorEliminar && <p style={{ fontSize: 12, color: 'var(--gasto)' }}>{errorEliminar}</p>}
-                    <button onClick={() => eliminar(cat.id)} disabled={eliminando} style={{
-                      background: 'var(--gasto)', color: '#fff', border: 'none',
-                      borderRadius: 8, padding: '7px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                    }}>
-                      {eliminando ? '...' : 'Eliminar'}
-                    </button>
-                    <button onClick={() => { setConfirmEliminar(null); setErrorEliminar('') }} style={{
-                      background: 'var(--card)', border: 'none', borderRadius: 8,
-                      padding: '7px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--texto-secundario)',
-                    }}>
-                      Cancelar
-                    </button>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => abrirEditar(cat)} style={{
-                      flex: 1, background: 'var(--card-hover)', border: 'none',
-                      borderRadius: 10, padding: '8px', fontSize: 13, fontWeight: 500,
-                      color: 'var(--texto-secundario)', cursor: 'pointer',
-                    }}>
-                      Editar
-                    </button>
-                    <button onClick={() => { setConfirmEliminar(cat.id); setErrorEliminar('') }} style={{
-                      width: 38, height: 36, borderRadius: 10, border: 'none',
-                      background: 'var(--gasto-suave)', color: 'var(--gasto)',
-                      cursor: 'pointer', fontSize: 16,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      🗑
-                    </button>
-                  </div>
-                )}
-              </div>
+                <span className="fila-chevron" style={{ alignSelf: 'center' }}><Icono nombre="chevron-right" size={16} grosor={2.2} /></span>
+              </button>
             )
           })}
         </div>
       )}
 
-      {/* Modal crear/editar */}
-      {modalAbierto && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'flex-end', zIndex: 200 }}
-          onClick={cerrarModal}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              background: 'var(--card)', borderRadius: '24px 24px 0 0',
-              padding: '24px 20px', paddingBottom: 'calc(var(--nav-height) + 20px)',
-              width: '100%', maxWidth: 430, margin: '0 auto',
-              maxHeight: '90vh', overflowY: 'auto',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22 }}>
-              <p style={{ fontSize: 18, fontWeight: 600 }}>
-                {editandoId ? 'Editar categoría' : 'Nueva categoría'}
-              </p>
-              <button onClick={cerrarModal} style={{
-                background: 'var(--card-hover)', border: 'none', borderRadius: '50%',
-                width: 32, height: 32, fontSize: 18, color: 'var(--texto-secundario)',
-                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>×</button>
-            </div>
-
-            <label className="label">Nombre</label>
-            <input
-              className="input"
-              placeholder="Ej: Transporte, Mercado..."
-              value={form.nombre}
-              onChange={e => setForm({ ...form, nombre: e.target.value })}
-              style={{ marginBottom: 16 }}
-              autoFocus
-            />
-
-            <label className="label">Tipo</label>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-              {['gasto', 'ingreso', 'ahorro'].map(t => (
-                <button key={t} onClick={() => setForm({ ...form, tipo: t })} style={{
-                  flex: 1,
-                  background: form.tipo === t ? 'var(--acento)' : 'var(--card-hover)',
-                  color: form.tipo === t ? '#fff' : 'var(--texto-secundario)',
-                  border: '0.5px solid var(--borde)', borderRadius: 10,
-                  padding: '10px 4px', fontSize: 13, fontWeight: 500,
-                  cursor: 'pointer', textTransform: 'capitalize', transition: 'all 0.15s',
-                }}>
-                  {t}
-                </button>
-              ))}
-            </div>
-
-            <label className="label">Límite mensual (opcional)</label>
-            <input
-              className="input"
-              type="number"
-              placeholder="Ej: 200000"
-              value={form.presupuesto_mensual}
-              onChange={e => setForm({ ...form, presupuesto_mensual: e.target.value })}
-              style={{ marginBottom: 20 }}
-            />
-
-            <label className="label">Color</label>
-            <div style={{ display: 'flex', gap: 10, marginBottom: 24, flexWrap: 'wrap' }}>
-              {COLORES.map(color => (
-                <button
-                  key={color}
-                  onClick={() => setForm({ ...form, color_hex: color })}
-                  style={{
-                    width: 36, height: 36, borderRadius: '50%', background: color,
-                    border: form.color_hex === color ? '3px solid #fff' : '3px solid transparent',
-                    cursor: 'pointer', transition: 'border 0.15s',
-                  }}
-                />
-              ))}
-            </div>
-
-            {errorForm && (
-              <p style={{
-                color: 'var(--gasto)', fontSize: 13, marginBottom: 16,
-                background: 'var(--gasto-suave)', padding: '10px 14px', borderRadius: 10,
-              }}>
-                {errorForm}
-              </p>
-            )}
-
+      {/* Crear / editar */}
+      <Sheet
+        abierto={modalAbierto}
+        onCerrar={cerrarModal}
+        titulo={editandoId ? 'Editar categoría' : 'Nueva categoría'}
+        pie={
+          <>
             <button onClick={guardar} className="btn-primario" disabled={guardando}>
-              {guardando ? 'Guardando...' : editandoId ? 'Guardar cambios' : 'Crear categoría'}
+              {guardando ? 'Guardando…' : editandoId ? 'Guardar cambios' : 'Crear categoría'}
             </button>
-          </div>
+            {editandoId && (
+              <button className="btn-texto peligro" onClick={() => setConfirmAbierto(true)}>Eliminar categoría</button>
+            )}
+          </>
+        }
+      >
+        <div className="campo">
+          <label className="label" htmlFor="cat-nombre">Nombre</label>
+          <input
+            id="cat-nombre"
+            className="input"
+            placeholder="Ej: Transporte, Mercado…"
+            value={form.nombre}
+            onChange={e => setForm({ ...form, nombre: e.target.value })}
+            autoCapitalize="sentences"
+            enterKeyHint="next"
+          />
         </div>
-      )}
-    </div>
+
+        <div className="campo">
+          <p className="label">Tipo</p>
+          <Segmentado etiqueta="Tipo" opciones={TIPOS_FORM} valor={form.tipo} onChange={tipo => setForm({ ...form, tipo })} />
+        </div>
+
+        <div className="campo">
+          <label className="label" htmlFor="cat-limite">Límite mensual <span style={{ color: 'var(--texto-terciario)' }}>· opcional</span></label>
+          <CampoMonto
+            id="cat-limite"
+            valor={form.presupuesto_mensual}
+            onChange={v => setForm({ ...form, presupuesto_mensual: v })}
+            placeholder="Sin límite"
+          />
+        </div>
+
+        <div className="campo">
+          <p className="label">Color</p>
+          <SelectorColor colores={COLORES} valor={form.color_hex} onChange={c => setForm({ ...form, color_hex: c })} />
+        </div>
+
+        <AvisoError>{errorForm}</AvisoError>
+      </Sheet>
+
+      <ConfirmarSheet
+        abierto={confirmAbierto}
+        onCerrar={() => setConfirmAbierto(false)}
+        titulo="¿Eliminar categoría?"
+        mensaje={`"${form.nombre || 'Esta categoría'}" se eliminará. Tus transacciones se conservan, pero quedarán sin esta categoría.`}
+        textoConfirmar="Eliminar categoría"
+        onConfirmar={eliminar}
+        cargando={eliminando}
+      />
+    </Pagina>
   )
 }

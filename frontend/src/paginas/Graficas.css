@@ -1,0 +1,35 @@
+/* Barras que crecen desde la línea base — solo al cargar o cambiar de período */
+@keyframes crecer-y {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
+@keyframes crecer-x {
+  from { transform: scaleX(0); }
+}
+
+.barra-dato {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  animation: crecer-y 420ms var(--ease-out) both;
+}
+
+.barra-ranking {
+  animation: crecer-x 520ms var(--ease-out) both;
+}
+
+.grafica-lectura {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 32px;
+  margin-bottom: 8px;
+  padding-left: 2px;
+  font-size: 13px;
+  color: var(--texto-secundario);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .barra-dato, .barra-ranking { animation: none; }
+}

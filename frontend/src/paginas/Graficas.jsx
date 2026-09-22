@@ -1,54 +1,47 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../api'
-
-const formatCOP = (n) =>
-  new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(n)
-
-const formatCorto = (n) => {
-  if (!n || n === 0) return '$0'
-  if (n >= 1000000) return `$${parseFloat((n / 1000000).toFixed(1)).toString()}M`
-  if (n >= 1000) return `$${Math.round(n / 1000)}K`
-  return `$${n}`
-}
-
-const labelCorto = (str, n = 11) => str.length > n ? str.slice(0, n - 1) + '…' : str
+import Pagina from '../componentes/Pagina'
+import Icono from '../componentes/Icono'
+import { EstadoVacio, Segmentado } from '../componentes/Controles'
+import { formatCOP, formatCorto } from '../utils/formato'
+import './Graficas.css'
 
 const PERIODOS = [
-  { valor: 'mes',    etiqueta: 'Este mes' },
+  { valor: 'mes',    etiqueta: 'Mes' },
   { valor: '3meses', etiqueta: '3 meses' },
   { valor: '6meses', etiqueta: '6 meses' },
-  { valor: 'anio',   etiqueta: 'Este año' },
+  { valor: 'anio',   etiqueta: 'Año' },
 ]
 
-/* ─── MetricCard ──────────────────────────────────────── */
+const C_INGRESO = '#30D158'
+const C_GASTO   = '#FF453A'
+
+/* ─── Stat tile ───────────────────────────────────────── */
 function calcVariacion(actual, anterior) {
   if (!anterior || anterior === 0) return null
   return Math.round((actual - anterior) / anterior * 100)
 }
 
-function MetricCard({ label, valor, color, signo, anterior, invertir = false }) {
+function MetricCard({ label, valor, color, signo = '', anterior, invertir = false }) {
   const pct = calcVariacion(valor, anterior)
   // Para gastos, subir es malo (invertir=true)
   const positivo = invertir ? pct < 0 : pct > 0
-  const colorVar = pct === 0 ? 'var(--texto-terciario)'
-    : positivo ? 'var(--ingreso)' : 'var(--gasto)'
+  const colorVar = pct === 0 ? 'var(--texto-terciario)' : positivo ? 'var(--ingreso)' : 'var(--gasto)'
   const flecha = pct > 0 ? '↑' : pct < 0 ? '↓' : '→'
 
   return (
-    <div style={{ background: 'var(--card-hover)', borderRadius: 14, padding: '14px 16px' }}>
-      <p style={{
-        fontSize: 10, color: 'var(--texto-terciario)', marginBottom: 7,
-        fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4,
-      }}>
+    <div style={{ background: 'var(--card-hover)', borderRadius: 14, padding: '12px 14px', minWidth: 0 }}>
+      <p style={{ fontSize: 12, color: 'var(--texto-secundario)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
         {label}
       </p>
-      <p style={{ fontSize: 16, fontWeight: 700, color, lineHeight: 1.2, marginBottom: pct !== null ? 5 : 0 }}>
+      <p className="cifra" style={{ fontSize: 17, fontWeight: 600, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         {signo}{formatCOP(valor || 0)}
       </p>
       {pct !== null && (
-        <p style={{ fontSize: 11, color: colorVar, fontWeight: 500 }}>
-          {flecha} {Math.abs(pct)}% vs per. ant.
+        <p style={{ fontSize: 12, color: colorVar, fontWeight: 500, marginTop: 4 }}>
+          {flecha} {Math.abs(pct)}% <span style={{ color: 'var(--texto-terciario)', fontWeight: 400 }}>vs. anterior</span>
         </p>
       )}
     </div>
@@ -56,332 +49,300 @@ function MetricCard({ label, valor, color, signo, anterior, invertir = false }) 
 }
 
 /* ─── BarChart ────────────────────────────────────────── */
-const W = 320, H = 170
-const PAD_L = 44, PAD_R = 8, PAD_T = 10, PAD_B = 24
+const W = 320, H = 180
+const PAD_L = 40, PAD_R = 4, PAD_T = 8, PAD_B = 22
 const CHART_W = W - PAD_L - PAD_R
 const CHART_H = H - PAD_T - PAD_B
 const BASELINE = PAD_T + CHART_H
-const Y_TICKS = [0.25, 0.5, 0.75, 1.0]
+
+// Escala "bonita": ticks redondos (0, 500K, 1M…) en lugar de fracciones del máximo
+function escalaBonita(max, n = 4) {
+  if (max <= 0) return { tope: 1, paso: 0.25 }
+  const bruto = max / n
+  const mag = 10 ** Math.floor(Math.log10(bruto))
+  const f = bruto / mag
+  const paso = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * mag
+  return { tope: paso * n, paso }
+}
+
+// Rect con extremo de datos redondeado (4px) y base recta
+function barPath(x, y, w, h) {
+  const r = Math.min(4, w / 2, h)
+  return `M${x},${y + h} V${y + r} Q${x},${y} ${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + h} Z`
+}
 
 function BarChart({ data }) {
-  const [tooltip, setTooltip] = useState(null)
+  const [activo, setActivo] = useState(null)
 
   if (!data || data.length <= 1) return null
 
   const maxVal = Math.max(...data.flatMap(d => [d.ingresos, d.gastos]), 1)
+  const { tope, paso } = escalaBonita(maxVal)
+  const ticks = Array.from({ length: Math.round(tope / paso) + 1 }, (_, i) => i * paso)
   const N = data.length
   const groupW = CHART_W / N
-  const barW = Math.max(4, Math.min(13, groupW * 0.27))
-  const barGap = Math.max(2, barW * 0.35)
-
-  const scaleY = (val) => PAD_T + CHART_H - (val / maxVal) * CHART_H
+  const barW = Math.max(4, Math.min(14, groupW * 0.28))
+  const gap = 2
+  const scaleY = (v) => BASELINE - (v / tope) * CHART_H
+  const sel = activo !== null ? data[activo] : null
 
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      style={{ width: '100%', display: 'block' }}
-      onClick={() => setTooltip(null)}
-    >
-      {/* Grid lines */}
-      {Y_TICKS.map(t => {
-        const y = scaleY(maxVal * t)
-        return (
+    <div style={{ position: 'relative' }} onPointerLeave={e => { if (e.pointerType === 'mouse') setActivo(null) }}>
+      {/* Fila de lectura: la leyenda, o el detalle del mes tocado (sin tapar el gráfico) */}
+      <div className="grafica-lectura" aria-live="polite">
+        {sel ? (
+          <>
+            <span style={{ fontWeight: 600, textTransform: 'capitalize', color: 'var(--texto-primario)' }}>{sel.mes_corto}</span>
+            {[['Ingresos', sel.ingresos, C_INGRESO], ['Gastos', sel.gastos, C_GASTO]].map(([l, v, c]) => (
+              <span key={l} className="cifra" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: c }} aria-hidden="true" />
+                <span className="sr-only">{l}</span>
+                <span style={{ color: 'var(--texto-primario)', fontWeight: 600 }}>{formatCOP(v)}</span>
+              </span>
+            ))}
+          </>
+        ) : (
+          [[C_INGRESO, 'Ingresos'], [C_GASTO, 'Gastos']].map(([color, label]) => (
+            <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
+              {label}
+            </span>
+          ))
+        )}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block', overflow: 'visible' }} role="img"
+        aria-label="Ingresos y gastos por mes">
+        {ticks.map(t => (
           <g key={t}>
-            <line x1={PAD_L} y1={y} x2={W - PAD_R} y2={y}
-              stroke="rgba(255,255,255,0.05)" strokeWidth={0.5} />
-            <text x={PAD_L - 4} y={y + 3.5} textAnchor="end" fontSize={8} fill="rgba(255,255,255,0.2)">
-              {formatCorto(maxVal * t)}
+            <line x1={PAD_L} y1={scaleY(t)} x2={W - PAD_R} y2={scaleY(t)}
+              stroke={t === 0 ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.06)'} strokeWidth={1} vectorEffect="non-scaling-stroke" />
+            <text x={PAD_L - 6} y={scaleY(t) + 3.5} textAnchor="end" fontSize={10} fill="rgba(255,255,255,0.4)" className="cifra">
+              {formatCorto(t)}
             </text>
           </g>
-        )
-      })}
-      <line x1={PAD_L} y1={BASELINE} x2={W - PAD_R} y2={BASELINE}
-        stroke="rgba(255,255,255,0.08)" strokeWidth={0.5} />
+        ))}
 
-      {/* Bars */}
-      {data.map((d, i) => {
-        const cx = PAD_L + i * groupW + groupW / 2
-        const ingX = cx - barGap / 2 - barW
-        const gasX = cx + barGap / 2
-        const ingH = (d.ingresos / maxVal) * CHART_H
-        const gasH = (d.gastos / maxVal) * CHART_H
-        const isIng = tooltip?.key === `ing-${i}`
-        const isGas = tooltip?.key === `gas-${i}`
-        const rx = Math.min(3, barW / 2)
-
-        return (
-          <g key={i}>
-            {d.ingresos > 0 && (
-              <rect x={ingX} y={BASELINE - ingH} width={barW} height={Math.max(ingH, 2)}
-                rx={rx} fill="#30D158" opacity={isIng ? 1 : 0.75}
+        {data.map((d, i) => {
+          const cx = PAD_L + i * groupW + groupW / 2
+          const ingH = (d.ingresos / tope) * CHART_H
+          const gasH = (d.gastos / tope) * CHART_H
+          const atenuado = activo !== null && activo !== i
+          return (
+            <g key={i} style={{ opacity: atenuado ? 0.35 : 1, transition: 'opacity 150ms ease' }}>
+              {d.ingresos > 0 && (
+                <path className="barra-dato" style={{ animationDelay: `${i * 40}ms` }}
+                  d={barPath(cx - gap / 2 - barW, BASELINE - Math.max(ingH, 2), barW, Math.max(ingH, 2))} fill={C_INGRESO} />
+              )}
+              {d.gastos > 0 && (
+                <path className="barra-dato" style={{ animationDelay: `${i * 40 + 20}ms` }}
+                  d={barPath(cx + gap / 2, BASELINE - Math.max(gasH, 2), barW, Math.max(gasH, 2))} fill={C_GASTO} />
+              )}
+              <text x={cx} y={H - 5} textAnchor="middle" fontSize={10}
+                fill={activo === i ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.45)'}>
+                {d.mes_corto}
+              </text>
+              {/* Área táctil: toda la columna, más grande que las barras */}
+              <rect x={PAD_L + i * groupW} y={PAD_T} width={groupW} height={CHART_H + PAD_B} fill="transparent"
                 style={{ cursor: 'pointer' }}
-                onClick={e => {
-                  e.stopPropagation()
-                  setTooltip(isIng ? null : { key: `ing-${i}`, x: cx, y: BASELINE - ingH - 8, valor: d.ingresos, color: '#30D158' })
-                }}
-              />
-            )}
-            {d.gastos > 0 && (
-              <rect x={gasX} y={BASELINE - gasH} width={barW} height={Math.max(gasH, 2)}
-                rx={rx} fill="#FF453A" opacity={isGas ? 1 : 0.75}
-                style={{ cursor: 'pointer' }}
-                onClick={e => {
-                  e.stopPropagation()
-                  setTooltip(isGas ? null : { key: `gas-${i}`, x: cx, y: BASELINE - gasH - 8, valor: d.gastos, color: '#FF453A' })
-                }}
-              />
-            )}
-            <text x={cx} y={H - 5} textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.3)">
-              {d.mes_corto}
-            </text>
-          </g>
-        )
-      })}
+                onPointerEnter={e => { if (e.pointerType === 'mouse') setActivo(i) }}
+                onClick={() => setActivo(activo === i ? null : i)} />
+            </g>
+          )
+        })}
+      </svg>
 
-      {/* Tooltip bubble */}
-      {tooltip && (() => {
-        const tx = Math.min(Math.max(tooltip.x, 54), W - 54)
-        const ty = Math.max(tooltip.y - 14, PAD_T)
-        return (
-          <g>
-            <rect x={tx - 30} y={ty} width={60} height={18} rx={5}
-              fill="#1c2840" stroke="rgba(255,255,255,0.1)" strokeWidth={0.5} />
-            <text x={tx} y={ty + 12} textAnchor="middle" fontSize={9.5}
-              fill={tooltip.color} fontWeight="700">
-              {formatCorto(tooltip.valor)}
-            </text>
-          </g>
-        )
-      })()}
-    </svg>
+      {/* Vista de tabla para lectores de pantalla */}
+      <table className="sr-only">
+        <caption>Ingresos y gastos por mes</caption>
+        <thead><tr><th>Mes</th><th>Ingresos</th><th>Gastos</th></tr></thead>
+        <tbody>{data.map((d, i) => <tr key={i}><td>{d.mes_corto}</td><td>{formatCOP(d.ingresos)}</td><td>{formatCOP(d.gastos)}</td></tr>)}</tbody>
+      </table>
+    </div>
   )
 }
 
 /* ─── DonutChart ──────────────────────────────────────── */
-const DR = 58, DSW = 16, DCX = 85, DCY = 85
+const DR = 62, DSW = 16, DC = 84
 const CIRCUM = 2 * Math.PI * DR
+const GAP_DONUT = 2   // separación de superficie entre segmentos
 
+// Donut centrado + ranking debajo que hace de leyenda (color, nombre, %, monto).
+// Sin columna lateral: nada puede salirse de la tarjeta, ni con nombres largos
+// ni en pantallas de 320px.
 function DonutChart({ categorias }) {
   const [activo, setActivo] = useState(null)
 
   const total = categorias.reduce((s, c) => s + c.monto, 0)
   if (total === 0) return null
 
+  const multiples = categorias.length > 1
+  const segs = []
   let acc = 0
-  const segs = categorias.map((cat, i) => {
+  for (const cat of categorias) {
     const frac = cat.monto / total
-    const dash = frac * CIRCUM
-    const offset = CIRCUM * (0.25 - acc)
+    const dash = Math.max(frac * CIRCUM - (multiples ? GAP_DONUT : 0), 0.5)
+    segs.push({ ...cat, dash, offset: CIRCUM * (0.25 - acc) })
     acc += frac
-    return { ...cat, dash, offset, i }
-  })
+  }
 
   const activoCat = activo !== null ? categorias[activo] : null
-  const centroLabel = activoCat ? labelCorto(activoCat.nombre) : 'Total gastos'
-  const centroValor = activoCat ? `${activoCat.porcentaje}%` : formatCorto(total)
-  const centroColor = activoCat ? activoCat.color : 'rgba(255,255,255,0.9)'
+  const alternar = (i) => setActivo(activo === i ? null : i)
+  const atenuar = (i) => activo !== null && activo !== i
 
   return (
     <div>
-      {/* Ring + leyenda */}
-      <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 24 }}>
-        <svg width={170} height={170} viewBox="0 0 170 170" style={{ flexShrink: 0 }}>
-          <circle cx={DCX} cy={DCY} r={DR} fill="none"
-            stroke="rgba(255,255,255,0.06)" strokeWidth={DSW} />
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+        <svg width={DC * 2} height={DC * 2} viewBox={`0 0 ${DC * 2} ${DC * 2}`} style={{ maxWidth: '100%', height: 'auto' }}
+          role="img" aria-label="Distribución de gastos por categoría">
+          <circle cx={DC} cy={DC} r={DR} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={DSW} />
           {segs.map((seg, i) => (
             <circle key={i}
-              cx={DCX} cy={DCY} r={DR}
+              cx={DC} cy={DC} r={DR}
               fill="none"
               stroke={seg.color}
               strokeWidth={activo === i ? DSW + 5 : DSW}
               strokeDasharray={`${seg.dash} ${CIRCUM - seg.dash}`}
               strokeDashoffset={seg.offset}
-              style={{ cursor: 'pointer', transition: 'stroke-width 0.18s' }}
-              onClick={() => setActivo(activo === i ? null : i)}
+              style={{
+                cursor: 'pointer',
+                opacity: atenuar(i) ? 0.3 : 1,
+                transition: 'stroke-width 180ms var(--ease-out), opacity 150ms ease',
+              }}
+              onClick={() => alternar(i)}
             />
           ))}
-          <text x={DCX} y={DCY - 9} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.3)">
-            {centroLabel}
+          <text x={DC} y={DC - 8} textAnchor="middle" fontSize={12} fill="rgba(255,255,255,0.55)">
+            {activoCat ? `${activoCat.porcentaje}% del total` : 'Total'}
           </text>
-          <text x={DCX} y={DCY + 9} textAnchor="middle" fontSize={14} fontWeight="700" fill={centroColor}>
-            {centroValor}
+          <text x={DC} y={DC + 14} textAnchor="middle" fontSize={20} fontWeight="700" fill="#fff">
+            {formatCorto(activoCat ? activoCat.monto : total)}
           </text>
         </svg>
-
-        {/* Leyenda */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {categorias.slice(0, 5).map((cat, i) => (
-            <button key={i} onClick={() => setActivo(activo === i ? null : i)} style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left',
-              opacity: activo === null || activo === i ? 1 : 0.3,
-              transition: 'opacity 0.18s',
-            }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: cat.color, flexShrink: 0 }} />
-              <span style={{ fontSize: 12, color: 'var(--texto-secundario)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {cat.nombre}
-              </span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: cat.color, flexShrink: 0 }}>
-                {cat.porcentaje}%
-              </span>
-            </button>
-          ))}
-        </div>
       </div>
 
-      {/* Barras ranking */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+      {/* Ranking = leyenda: tocar una fila resalta su segmento */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {categorias.map((cat, i) => (
-          <div key={i}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-              <span style={{ fontSize: 13, color: 'var(--texto-secundario)', display: 'flex', alignItems: 'center', gap: 7 }}>
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: cat.color, display: 'inline-block', flexShrink: 0 }} />
+          <button
+            key={i}
+            type="button"
+            onClick={() => alternar(i)}
+            aria-pressed={activo === i}
+            style={{
+              display: 'block', width: '100%', textAlign: 'left', padding: '8px 0',
+              opacity: atenuar(i) ? 0.4 : 1, transition: 'opacity 150ms ease',
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7, minWidth: 0 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: cat.color, flexShrink: 0 }} />
+              <span style={{ flex: 1, minWidth: 0, fontSize: 14, color: 'var(--texto-primario)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {cat.nombre}
               </span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--texto-primario)' }}>
-                {formatCOP(cat.monto)}
-              </span>
-            </div>
-            <div style={{ height: 5, background: 'rgba(255,255,255,0.06)', borderRadius: 3 }}>
-              <div style={{
-                height: '100%', width: `${cat.porcentaje}%`,
-                background: cat.color, borderRadius: 3,
-                transition: 'width 0.6s ease',
-              }} />
-            </div>
-          </div>
+              <span className="cifra" style={{ fontSize: 13, color: 'var(--texto-secundario)', flexShrink: 0 }}>{cat.porcentaje}%</span>
+              <span className="cifra" style={{ fontSize: 14, fontWeight: 600, flexShrink: 0, minWidth: 0 }}>{formatCOP(cat.monto)}</span>
+            </span>
+            <span className="progress-track" style={{ display: 'block' }}>
+              <span className="progress-fill barra-ranking" style={{ display: 'block', transform: `scaleX(${cat.porcentaje / 100})`, background: cat.color, animationDelay: `${i * 40}ms` }} />
+            </span>
+          </button>
         ))}
       </div>
     </div>
   )
 }
 
-/* ─── Página principal ────────────────────────────────── */
+/* ─── Página ──────────────────────────────────────────── */
 export default function Graficas() {
   const navigate = useNavigate()
   const [periodo, setPeriodo] = useState('mes')
   const [datos, setDatos] = useState(null)
   const [cargando, setCargando] = useState(true)
+  const [error, setError] = useState(false)
+  const [intento, setIntento] = useState(0)
 
   useEffect(() => {
     const cargar = async () => {
       setCargando(true)
+      setError(false)
       try {
         const res = await api.get('/transacciones/analytics/', { params: { periodo } })
         setDatos(res.data)
       } catch (err) {
         console.error('Error cargando analytics:', err)
+        setError(true)
       } finally {
         setCargando(false)
       }
     }
     cargar()
-  }, [periodo])
+  }, [periodo, intento])
 
   const { resumen, resumen_anterior, mensual, por_categoria } = datos || {}
   const balance    = resumen          ? resumen.ingresos          - resumen.gastos          : 0
   const balanceAnt = resumen_anterior ? resumen_anterior.ingresos - resumen_anterior.gastos : 0
 
   return (
-    <div className="pagina">
-
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <h1 className="titulo-seccion" style={{ margin: 0 }}>Gráficas</h1>
-        <button onClick={() => navigate('/presupuesto')} style={{
-          background: 'var(--card)', border: '0.5px solid var(--borde)',
-          borderRadius: 20, padding: '7px 14px', fontSize: 13, fontWeight: 500,
-          color: 'var(--texto-secundario)', cursor: 'pointer',
-        }}>
-          🎯 Presupuesto
+    <Pagina
+      titulo="Gráficas"
+      acciones={
+        <button onClick={() => navigate('/presupuesto')} className="btn-icono" aria-label="Presupuesto">
+          <Icono nombre="objetivo" size={18} />
         </button>
+      }
+    >
+      <div style={{ marginBottom: 20 }}>
+        <Segmentado etiqueta="Período" opciones={PERIODOS} valor={periodo} onChange={setPeriodo} />
       </div>
 
-      {/* Selector de período */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
-        {PERIODOS.map(p => (
-          <button key={p.valor} onClick={() => setPeriodo(p.valor)} style={{
-            flex: 1,
-            background: periodo === p.valor ? 'var(--acento)' : 'var(--card)',
-            color: periodo === p.valor ? '#fff' : 'var(--texto-secundario)',
-            border: '0.5px solid var(--borde)', borderRadius: 20,
-            padding: '9px 4px', fontSize: 12, fontWeight: periodo === p.valor ? 600 : 400,
-            cursor: 'pointer', transition: 'all 0.15s',
-          }}>
-            {p.etiqueta}
-          </button>
-        ))}
-      </div>
-
-      {/* Contenido */}
-      {cargando ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {[110, 220, 270].map((h, i) => (
-            <div key={i} style={{ height: h, background: 'var(--card)', borderRadius: 22, opacity: 0.4 }} />
-          ))}
+      {cargando && !datos ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }} aria-busy="true">
+          {[190, 250, 290].map((h, i) => <div key={i} className="skeleton" style={{ height: h, borderRadius: 20 }} />)}
         </div>
+      ) : error && !datos ? (
+        <EstadoVacio icono="alerta" titulo="No se pudieron cargar tus datos" texto="Revisa tu conexión e intenta de nuevo."
+          accion={<button className="btn-primario" onClick={() => setIntento(n => n + 1)}>Reintentar</button>} />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div key={periodo} className="aparecer" style={{ display: 'flex', flexDirection: 'column', gap: 16, opacity: cargando ? 0.6 : 1, transition: 'opacity 150ms ease' }}>
 
-          {/* Resumen del período */}
-          <div className="card">
-            <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 14 }}>
-              Resumen del período
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <MetricCard label="Ingresos" valor={resumen?.ingresos} color="var(--ingreso)" signo="+"
-                anterior={resumen_anterior?.ingresos} />
-              <MetricCard label="Gastos"   valor={resumen?.gastos}   color="var(--gasto)"   signo="-"
-                anterior={resumen_anterior?.gastos} invertir />
-              <MetricCard label="Ahorros"  valor={resumen?.ahorros}  color="var(--ahorro)"  signo="→"
-                anterior={resumen_anterior?.ahorros} />
+          <section className="card" style={{ padding: 16 }}>
+            <h2 className="texto-nota" style={{ fontWeight: 500, marginBottom: 12, paddingLeft: 2 }}>Resumen del período</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+              <MetricCard label="Ingresos" valor={resumen?.ingresos} color={C_INGRESO} anterior={resumen_anterior?.ingresos} />
+              <MetricCard label="Gastos"   valor={resumen?.gastos}   color={C_GASTO}   anterior={resumen_anterior?.gastos} invertir />
+              <MetricCard label="Ahorros"  valor={resumen?.ahorros}  color="var(--ahorro)" anterior={resumen_anterior?.ahorros} />
               <MetricCard
                 label="Balance"
                 valor={Math.abs(balance)}
-                color={balance >= 0 ? 'var(--ingreso)' : 'var(--gasto)'}
-                signo={balance >= 0 ? '+' : '-'}
+                color={balance >= 0 ? C_INGRESO : C_GASTO}
+                signo={balance >= 0 ? '+' : '−'}
                 anterior={Math.abs(balanceAnt)}
               />
             </div>
-          </div>
+          </section>
 
-          {/* Evolución mensual (solo si hay > 1 mes) */}
           {mensual && mensual.length > 1 && (
-            <div className="card">
-              <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>
-                Evolución mensual
-              </p>
-              <div style={{ display: 'flex', gap: 14, marginBottom: 12 }}>
-                {[['#30D158', 'Ingresos'], ['#FF453A', 'Gastos']].map(([color, label]) => (
-                  <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
-                    <span style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>{label}</span>
-                  </div>
-                ))}
-              </div>
+            <section className="card" style={{ padding: 16 }}>
+              <h2 className="texto-nota" style={{ fontWeight: 500, marginBottom: 6, paddingLeft: 2 }}>Evolución mensual</h2>
               <BarChart data={mensual} />
-            </div>
+              <p className="texto-mini" style={{ marginTop: 10, textAlign: 'center' }}>Toca un mes para ver el detalle</p>
+            </section>
           )}
 
-          {/* Gastos por categoría */}
-          <div className="card">
-            <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 16 }}>
-              Gastos por categoría
-            </p>
+          <section className="card" style={{ padding: 16 }}>
+            <h2 className="texto-nota" style={{ fontWeight: 500, marginBottom: 14, paddingLeft: 2 }}>Gastos por categoría</h2>
             {por_categoria && por_categoria.length > 0 ? (
               <DonutChart categorias={por_categoria} />
             ) : (
-              <div style={{ textAlign: 'center', padding: '24px 0' }}>
-                <p style={{ fontSize: 36, marginBottom: 8 }}>📊</p>
-                <p style={{ color: 'var(--texto-terciario)', fontSize: 14 }}>
-                  Sin gastos con categoría en este período
-                </p>
+              <div style={{ textAlign: 'center', padding: '20px 0 8px' }}>
+                <span className="mosaico lg" style={{ background: 'var(--card-hover)', color: 'var(--texto-terciario)', margin: '0 auto 12px' }}>
+                  <Icono nombre="grafica" size={24} />
+                </span>
+                <p className="texto-nota">Sin gastos con categoría en este período</p>
               </div>
             )}
-          </div>
-
+          </section>
         </div>
       )}
-    </div>
+    </Pagina>
   )
 }

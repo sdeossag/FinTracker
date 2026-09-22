@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { Toaster } from 'sonner'
 import './index.css'
 
 import Inicio from './paginas/Inicio'
@@ -16,10 +17,14 @@ import NavBar from './componentes/NavBar'
 import ProtectedRoute from './componentes/ProtectedRoute'
 import Configuracion from './paginas/Configuracion'
 import Graficas from './paginas/Graficas'
+import Icono from './componentes/Icono'
+
+// Pantallas enfocadas en una tarea: sin barra de pestañas
+const SIN_NAV = ['/login', '/registro', '/biometria', '/onboarding', '/nueva', '/editar']
 
 function AppContent() {
   const location = useLocation()
-  const sinNav = ['/login', '/registro', '/biometria', '/onboarding'].includes(location.pathname)
+  const sinNav = SIN_NAV.some(r => location.pathname === r || location.pathname.startsWith(r + '/'))
 
   return (
     <>
@@ -54,6 +59,32 @@ export default function App() {
   return (
     <BrowserRouter>
       <AppContent />
+      {/* Un solo Toaster en la raíz. Arriba, lejos de la barra de pestañas y del pulgar. */}
+      <Toaster
+        theme="dark"
+        position="top-center"
+        offset={{ top: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
+        mobileOffset={{ top: 'calc(env(safe-area-inset-top, 0px) + 8px)', left: '12px', right: '12px' }}
+        gap={8}
+        icons={{
+          success: <Icono nombre="check-circulo" size={18} style={{ color: 'var(--ingreso)' }} />,
+          error: <Icono nombre="alerta" size={18} style={{ color: 'var(--gasto)' }} />,
+          info: <Icono nombre="info" size={18} style={{ color: 'var(--acento)' }} />,
+        }}
+        toastOptions={{
+          style: {
+            background: 'rgba(28, 36, 54, 0.92)',
+            backdropFilter: 'blur(20px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+            border: '0.5px solid rgba(255,255,255,0.12)',
+            color: 'var(--texto-primario)',
+            borderRadius: 16,
+            fontFamily: 'inherit',
+            fontSize: 15,
+            boxShadow: '0 10px 40px rgba(0,0,0,0.45)',
+          },
+        }}
+      />
     </BrowserRouter>
   )
 }

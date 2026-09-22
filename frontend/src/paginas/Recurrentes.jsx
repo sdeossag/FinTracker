@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
 import api, { ensureArray } from '../api'
-
-const formatCOP = (n) =>
-  new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(n)
+import Pagina from '../componentes/Pagina'
+import Icono, { TipoIcono } from '../componentes/Icono'
+import Sheet, { ConfirmarSheet } from '../componentes/Sheet'
+import { AvisoError, CampoMonto, EstadoVacio, Interruptor, Segmentado } from '../componentes/Controles'
+import { TIPOS_TRANSACCION } from '../utils/transaccion'
+import { fechaLocalISO, formatCOP, vibrar } from '../utils/formato'
 
 const FRECUENCIAS = [
-  { valor: 'diaria',    etiqueta: 'Diaria',     icono: '📅' },
-  { valor: 'semanal',   etiqueta: 'Semanal',    icono: '📆' },
-  { valor: 'quincenal', etiqueta: 'Quincenal',  icono: '🗓️' },
-  { valor: 'mensual',   etiqueta: 'Mensual',    icono: '📊' },
+  { valor: 'diaria',    etiqueta: 'Diaria' },
+  { valor: 'semanal',   etiqueta: 'Semanal' },
+  { valor: 'quincenal', etiqueta: 'Quincenal' },
+  { valor: 'mensual',   etiqueta: 'Mensual' },
 ]
 
 const DIAS_SEMANA = [
@@ -23,109 +26,53 @@ const DIAS_SEMANA = [
 ]
 
 const TIPOS_COLOR = { gasto: 'var(--gasto)', ingreso: 'var(--ingreso)', ahorro: 'var(--ahorro)' }
-const TIPOS_SUAVE = { gasto: 'var(--gasto-suave)', ingreso: 'var(--ingreso-suave)', ahorro: 'var(--ahorro-suave)' }
-const TIPOS_SIGNO = { gasto: '-', ingreso: '+', ahorro: '→' }
+const TIPOS_SIGNO = { gasto: '−', ingreso: '+', ahorro: '' }
 
 const formVacio = {
   nombre: '', monto: '', tipo: 'gasto', frecuencia: 'mensual',
   dia_ejecucion: null, cuenta_origen: '', cuenta_destino: '', categoria: '',
 }
 
-function DayPickerDropdown({ value, onChange, maxDia = 28 }) {
-  const [open, setOpen] = useState(false)
-  const dias = Array.from({ length: maxDia }, (_, i) => i + 1)
+function descripcionProgramacion(rec) {
+  const frec = FRECUENCIAS.find(f => f.valor === rec.frecuencia)?.etiqueta
+  if (!rec.dia_ejecucion) return rec.frecuencia === 'diaria' ? 'Todos los días' : `${frec} · manual`
+  if (rec.frecuencia === 'semanal') return `Cada ${DIAS_SEMANA.find(d => d.valor === rec.dia_ejecucion)?.etiqueta.toLowerCase()}`
+  if (rec.frecuencia === 'mensual') return `El ${rec.dia_ejecucion} de cada mes`
+  if (rec.frecuencia === 'quincenal') return `Los días ${rec.dia_ejecucion} y ${rec.dia_ejecucion + 15}`
+  return frec
+}
 
-  const seleccionar = (d) => {
-    onChange(value === d ? null : d)
-    setOpen(false)
-  }
-
+/* ── Selector de día (cuadrícula en línea, sin popover) ── */
+function SelectorDia({ valor, onChange, max }) {
   return (
-    <div style={{ position: 'relative' }}>
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        style={{
-          width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          background: 'var(--card-hover)', border: open ? '1.5px solid var(--acento)' : '0.5px solid var(--borde)',
-          borderRadius: 12, padding: '12px 16px', cursor: 'pointer', transition: 'border 0.15s',
-        }}
-      >
-        <span style={{
-          fontSize: 15,
-          color: value ? 'var(--texto-primario)' : 'var(--texto-terciario)',
-          fontWeight: value ? 600 : 400,
-        }}>
-          {value ? `Día ${value}` : 'Seleccionar día...'}
-        </span>
-        <span style={{
-          color: 'var(--texto-terciario)', fontSize: 12,
-          transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s',
-          display: 'inline-block',
-        }}>▾</span>
-      </button>
-
-      {open && (
-        <>
-          {/* Backdrop para cerrar */}
-          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 9 }} />
-
-          <div style={{
-            position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0,
-            background: 'var(--card-elevated, #1c2840)', borderRadius: 16,
-            border: '0.5px solid var(--borde)', padding: '12px 10px',
-            zIndex: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-          }}>
-            {/* Limpiar selección */}
-            {value && (
-              <button
-                type="button"
-                onClick={() => { onChange(null); setOpen(false) }}
-                style={{
-                  width: '100%', background: 'none', border: 'none',
-                  color: 'var(--texto-terciario)', fontSize: 12, cursor: 'pointer',
-                  padding: '4px 0 10px', textAlign: 'center',
-                }}
-              >
-                ✕ Quitar selección
-              </button>
-            )}
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
-              {dias.map(d => {
-                const sel = value === d
-                return (
-                  <button key={d} type="button" onClick={() => seleccionar(d)} style={{
-                    height: 34, borderRadius: 8, border: 'none', cursor: 'pointer',
-                    background: sel ? 'var(--acento)' : 'transparent',
-                    color: sel ? '#fff' : 'var(--texto-secundario)',
-                    fontWeight: sel ? 700 : 400, fontSize: 13,
-                    transition: 'all 0.12s',
-                  }}>
-                    {d}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        </>
-      )}
+    <div role="radiogroup" aria-label="Día del mes" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+      {Array.from({ length: max }, (_, i) => i + 1).map(d => {
+        const sel = valor === d
+        return (
+          <button
+            key={d}
+            type="button"
+            role="radio"
+            aria-checked={sel}
+            onClick={() => onChange(sel ? null : d)}
+            className="cifra"
+            style={{
+              height: 38, borderRadius: 10, fontSize: 15,
+              background: sel ? 'var(--acento)' : 'transparent',
+              color: sel ? '#fff' : 'var(--texto-primario)',
+              fontWeight: sel ? 600 : 400,
+              transition: 'background-color 150ms ease, color 150ms ease',
+            }}
+          >
+            {d}
+          </button>
+        )
+      })}
     </div>
   )
 }
 
-function labelDia(rec) {
-  if (!rec.dia_ejecucion) return null
-  if (rec.frecuencia === 'semanal') {
-    return DIAS_SEMANA.find(d => d.valor === rec.dia_ejecucion)?.etiqueta
-  }
-  if (rec.frecuencia === 'mensual') return `Día ${rec.dia_ejecucion} de cada mes`
-  if (rec.frecuencia === 'quincenal') return `Día ${rec.dia_ejecucion} y ${rec.dia_ejecucion + 15} de cada mes`
-  return null
-}
-
 export default function Recurrentes() {
-  const navigate = useNavigate()
   const [recurrentes, setRecurrentes] = useState([])
   const [cuentas, setCuentas] = useState([])
   const [categorias, setCategorias] = useState([])
@@ -136,13 +83,10 @@ export default function Recurrentes() {
   const [errorForm, setErrorForm] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [registrandoId, setRegistrandoId] = useState(null)
-  const [confirmEliminar, setConfirmEliminar] = useState(null)
+  const [confirmAbierto, setConfirmAbierto] = useState(false)
   const [feedbackId, setFeedbackId] = useState(null)
 
-  useEffect(() => { cargar() }, [])
-
   const cargar = async () => {
-    setCargando(true)
     try {
       const [resR, resC, resCat] = await Promise.all([
         api.get('/recurrentes/'),
@@ -159,10 +103,12 @@ export default function Recurrentes() {
     }
   }
 
+  useEffect(() => { cargar() }, [])
+
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
 
   const abrirModal = () => { setForm(formVacio); setEditandoId(null); setErrorForm(''); setModal(true) }
-  const cerrarModal = () => { setModal(false); setEditandoId(null); setErrorForm('') }
+  const cerrarModal = () => { setModal(false); setErrorForm('') }
 
   const abrirEditar = (rec) => {
     setForm({
@@ -182,7 +128,7 @@ export default function Recurrentes() {
 
   const guardar = async () => {
     if (!form.nombre.trim()) { setErrorForm('El nombre es obligatorio.'); return }
-    if (!form.monto || parseInt(form.monto) <= 0) { setErrorForm('El monto debe ser mayor a 0.'); return }
+    if (!(parseInt(form.monto) > 0)) { setErrorForm('El monto debe ser mayor a 0.'); return }
     if (form.tipo === 'gasto' && !form.cuenta_origen) { setErrorForm('Selecciona la cuenta de origen.'); return }
     if (form.tipo === 'ingreso' && !form.cuenta_destino) { setErrorForm('Selecciona la cuenta de destino.'); return }
     if (form.tipo === 'ahorro' && (!form.cuenta_origen || !form.cuenta_destino)) {
@@ -191,11 +137,11 @@ export default function Recurrentes() {
     setErrorForm('')
     setGuardando(true)
     const payload = {
-      nombre: form.nombre,
+      nombre: form.nombre.trim(),
       monto: parseInt(form.monto),
       tipo: form.tipo,
       frecuencia: form.frecuencia,
-      dia_ejecucion: form.dia_ejecucion ?? null,
+      dia_ejecucion: form.frecuencia === 'diaria' ? null : (form.dia_ejecucion || null),
       cuenta_origen: form.cuenta_origen || null,
       cuenta_destino: form.cuenta_destino || null,
       categoria: form.categoria || null,
@@ -208,6 +154,7 @@ export default function Recurrentes() {
       }
       cerrarModal()
       await cargar()
+      toast.success(editandoId ? 'Plantilla actualizada' : 'Plantilla creada', { description: payload.nombre })
     } catch (err) {
       const d = err.response?.data
       setErrorForm(d?.non_field_errors?.[0] || d?.detail || 'Error al guardar.')
@@ -216,19 +163,29 @@ export default function Recurrentes() {
     }
   }
 
+  // Optimista: el switch responde al instante y se revierte si falla
   const toggleActiva = async (rec) => {
+    setRecurrentes(prev => prev.map(r => r.id === rec.id ? { ...r, activa: !rec.activa } : r))
     try {
       const res = await api.patch(`/recurrentes/${rec.id}/`, { activa: !rec.activa })
       setRecurrentes(prev => prev.map(r => r.id === rec.id ? res.data : r))
-    } catch { /* silencioso */ }
+    } catch {
+      setRecurrentes(prev => prev.map(r => r.id === rec.id ? { ...r, activa: rec.activa } : r))
+      toast.error('No se pudo cambiar el estado')
+    }
   }
 
-  const eliminar = async (id) => {
+  const eliminar = async () => {
+    if (!editandoId) return
     try {
-      await api.delete(`/recurrentes/${id}/`)
-      setRecurrentes(prev => prev.filter(r => r.id !== id))
-      setConfirmEliminar(null)
-    } catch { /* silencioso */ }
+      await api.delete(`/recurrentes/${editandoId}/`)
+      setRecurrentes(prev => prev.filter(r => r.id !== editandoId))
+      setConfirmAbierto(false)
+      cerrarModal()
+      toast.success('Plantilla eliminada')
+    } catch {
+      toast.error('No se pudo eliminar la plantilla')
+    }
   }
 
   const registrarAhora = async (rec) => {
@@ -238,16 +195,18 @@ export default function Recurrentes() {
         nombre: rec.nombre,
         monto: rec.monto,
         tipo: rec.tipo,
-        fecha: new Date().toISOString().split('T')[0],
+        fecha: fechaLocalISO(),
         cuenta_origen: rec.cuenta_origen || null,
         cuenta_destino: rec.cuenta_destino || null,
         categorias_ids: rec.categoria ? [rec.categoria] : [],
         notas: `Desde recurrente: ${rec.nombre}`,
       })
+      vibrar()
       setFeedbackId(rec.id)
-      setTimeout(() => setFeedbackId(null), 2000)
+      setTimeout(() => setFeedbackId(id => (id === rec.id ? null : id)), 2000)
     } catch (err) {
       console.error('Error registrando recurrente:', err)
+      toast.error('No se pudo registrar', { description: rec.nombre })
     } finally {
       setRegistrandoId(null)
     }
@@ -256,387 +215,236 @@ export default function Recurrentes() {
   const categoriasFiltradas = categorias.filter(c => c.tipo === form.tipo)
   const necesitaDia = form.frecuencia !== 'diaria'
 
+  const textoProgramacion = !form.dia_ejecucion
+    ? 'Sin día fijo: solo se registra cuando toques "Registrar ahora".'
+    : form.frecuencia === 'semanal'
+      ? `Se registrará automáticamente cada ${DIAS_SEMANA.find(d => d.valor === form.dia_ejecucion)?.etiqueta.toLowerCase()}.`
+      : form.frecuencia === 'quincenal'
+        ? `Se registrará los días ${form.dia_ejecucion} y ${form.dia_ejecucion + 15} de cada mes.`
+        : `Se registrará el día ${form.dia_ejecucion} de cada mes.`
+
   return (
-    <div className="pagina" style={{ paddingBottom: 40 }}>
-      {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        {/* Volver */}
-        <button onClick={() => navigate(-1)} style={{
-          background: 'none', border: 'none', padding: 0,
-          display: 'flex', alignItems: 'center', gap: 6,
-          color: 'var(--acento)', cursor: 'pointer', fontSize: 14,
-          fontWeight: 500, marginBottom: 10,
-        }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          Historial
+    <Pagina
+      titulo="Recurrentes"
+      atras={{ etiqueta: 'Historial', a: '/transacciones' }}
+      acciones={
+        <button onClick={abrirModal} className="btn-icono acento" aria-label="Nueva plantilla">
+          <Icono nombre="plus" size={20} grosor={2.2} />
         </button>
+      }
+    >
+      <p className="texto-nota" style={{ margin: '-8px 0 22px', paddingRight: 8 }}>
+        Plantillas para movimientos que se repiten. Con un día configurado se registran solas; si no, usa "Registrar ahora".
+      </p>
 
-        {/* Título + botón nueva en la misma fila pero título dominante */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0 }}>Recurrentes</h1>
-          <button
-            onClick={abrirModal}
-            onMouseEnter={e => { e.currentTarget.style.background = '#0A84FF'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = '#0A84FF' }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(10,132,255,0.12)'; e.currentTarget.style.color = 'var(--acento)'; e.currentTarget.style.borderColor = 'rgba(10,132,255,0.35)' }}
-            style={{
-              background: 'rgba(10,132,255,0.12)', border: '0.5px solid rgba(10,132,255,0.35)',
-              borderRadius: 20, padding: '8px 16px', fontSize: 14, fontWeight: 600,
-              color: 'var(--acento)', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
-              transition: 'background 0.18s, color 0.18s, border-color 0.18s',
-            }}
-          >
-            <svg width="13" height="13" viewBox="0 0 22 22" fill="none">
-              <path d="M11 4V18M4 11H18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"/>
-            </svg>
-            Nueva
-          </button>
-        </div>
-      </div>
-
-      {/* Descripción */}
-      <div className="card" style={{ padding: '14px 18px', marginBottom: 24, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-        <span style={{ fontSize: 22, flexShrink: 0 }}>🔁</span>
-        <p style={{ color: 'var(--texto-secundario)', fontSize: 13, lineHeight: '1.6' }}>
-          Plantillas para movimientos que se repiten. Si configuras un día, la app las registra automáticamente. Si no, usa <strong>Registrar ahora</strong> cuando quieras.
-        </p>
-      </div>
-
-      {/* Lista */}
       {cargando ? (
-        <p style={{ color: 'var(--texto-secundario)', fontSize: 14 }}>Cargando...</p>
-      ) : recurrentes.length === 0 ? (
-        <div style={{ textAlign: 'center', paddingTop: 40 }}>
-          <p style={{ fontSize: 40, marginBottom: 12 }}>🔁</p>
-          <p style={{ color: 'var(--texto-secundario)', fontSize: 15, fontWeight: 500 }}>Sin plantillas aún</p>
-          <p style={{ color: 'var(--texto-terciario)', fontSize: 13, marginTop: 4, marginBottom: 24 }}>
-            Crea una para movimientos que se repiten
-          </p>
-          <button onClick={abrirModal} className="btn-primario" style={{ padding: '12px 28px' }}>
-            Crear primera plantilla
-          </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }} aria-busy="true">
+          {[1, 2].map(i => <div key={i} className="skeleton" style={{ height: 150, borderRadius: 20 }} />)}
         </div>
+      ) : recurrentes.length === 0 ? (
+        <EstadoVacio
+          icono="repetir"
+          titulo="Sin plantillas aún"
+          texto="Crea una para el arriendo, Netflix, tu sueldo o cualquier movimiento que se repita."
+          accion={<button onClick={abrirModal} className="btn-primario"><Icono nombre="plus" size={18} grosor={2.4} />Crear plantilla</button>}
+        />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="aparecer" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {recurrentes.map(rec => {
-            const frec = FRECUENCIAS.find(f => f.valor === rec.frecuencia)
             const enFeedback = feedbackId === rec.id
             const enRegistro = registrandoId === rec.id
-            const diaLabel = labelDia(rec)
+            const cuentasTexto = [rec.cuenta_origen_nombre, rec.cuenta_destino_nombre].filter(Boolean).join(' → ')
 
             return (
-              <div key={rec.id} className="card" style={{
-                padding: '20px',
-                opacity: rec.activa ? 1 : 0.55,
-                transition: 'opacity 0.2s',
-                border: enFeedback ? '1.5px solid var(--ingreso)' : '0.5px solid var(--borde)',
-              }}>
-
-                {/* — Fila superior: icono + info + estado — */}
-                <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginBottom: 16 }}>
-                  {/* Icono tipo */}
-                  <div style={{
-                    width: 48, height: 48, borderRadius: 14, flexShrink: 0,
-                    background: TIPOS_SUAVE[rec.tipo],
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22,
-                  }}>
-                    {rec.tipo === 'ingreso' ? '💰' : rec.tipo === 'ahorro' ? '🏦' : '💸'}
-                  </div>
-
-                  {/* Nombre y monto */}
+              <article key={rec.id} className="card" style={{ padding: 16 }} aria-label={rec.nombre}>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center', opacity: rec.activa ? 1 : 0.5, transition: 'opacity 200ms ease' }}>
+                  <TipoIcono tipo={rec.tipo} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    {/* Badges */}
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
-                      <span style={{
-                        fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20,
-                        background: TIPOS_SUAVE[rec.tipo], color: TIPOS_COLOR[rec.tipo],
-                        textTransform: 'uppercase', letterSpacing: 0.4,
-                      }}>{rec.tipo}</span>
-                      <span style={{
-                        fontSize: 10, padding: '2px 7px', borderRadius: 20,
-                        background: 'var(--card-hover)', color: 'var(--texto-terciario)',
-                      }}>
-                        {frec?.icono} {frec?.etiqueta}
-                      </span>
-                      {diaLabel && (
-                        <span style={{
-                          fontSize: 10, padding: '2px 7px', borderRadius: 20,
-                          background: 'var(--acento-suave)', color: 'var(--acento)',
-                        }}>
-                          🤖 {diaLabel}
-                        </span>
-                      )}
-                    </div>
-                    <p style={{
-                      fontWeight: 600, fontSize: 16, marginBottom: 2,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                      {rec.nombre}
-                    </p>
-                    <p style={{ fontWeight: 800, fontSize: 20, color: TIPOS_COLOR[rec.tipo] }}>
-                      {TIPOS_SIGNO[rec.tipo]}{formatCOP(rec.monto)}
+                    <p className="fila-titulo" style={{ fontWeight: 600 }}>{rec.nombre}</p>
+                    <p className="fila-sub" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      {rec.dia_ejecucion || rec.frecuencia === 'diaria'
+                        ? <Icono nombre="reloj" size={13} style={{ color: 'var(--acento)', flexShrink: 0 }} />
+                        : null}
+                      {descripcionProgramacion(rec)}
                     </p>
                   </div>
-
-                  {/* Toggle activa */}
-                  <button onClick={() => toggleActiva(rec)} style={{
-                    background: rec.activa ? 'var(--ingreso-suave)' : 'var(--card-hover)',
-                    border: 'none', borderRadius: 20, padding: '6px 12px',
-                    fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0,
-                    color: rec.activa ? 'var(--ingreso)' : 'var(--texto-terciario)',
-                    whiteSpace: 'nowrap',
-                  }}>
-                    {rec.activa ? '● Activa' : '○ Pausada'}
-                  </button>
+                  <Interruptor
+                    activo={rec.activa}
+                    onChange={() => toggleActiva(rec)}
+                    etiqueta={rec.activa ? `Pausar ${rec.nombre}` : `Activar ${rec.nombre}`}
+                  />
                 </div>
 
-                {/* — Info secundaria — */}
-                {(rec.cuenta_origen_nombre || rec.cuenta_destino_nombre || rec.categoria_nombre || rec.ultima_ejecucion) && (
-                  <div style={{
-                    display: 'flex', gap: 6, flexWrap: 'wrap',
-                    padding: '12px 0',
-                    borderTop: '0.5px solid var(--separador)',
-                    borderBottom: '0.5px solid var(--separador)',
-                    marginBottom: 16,
-                  }}>
-                    {rec.cuenta_origen_nombre && (
-                      <span style={{ fontSize: 12, padding: '4px 10px', borderRadius: 10, background: 'var(--card-hover)', color: 'var(--texto-secundario)' }}>
-                        ↑ {rec.cuenta_origen_nombre}
-                      </span>
-                    )}
-                    {rec.cuenta_destino_nombre && (
-                      <span style={{ fontSize: 12, padding: '4px 10px', borderRadius: 10, background: 'var(--card-hover)', color: 'var(--texto-secundario)' }}>
-                        ↓ {rec.cuenta_destino_nombre}
-                      </span>
-                    )}
+                <p className="cifra" style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', color: TIPOS_COLOR[rec.tipo], margin: '14px 0 4px', opacity: rec.activa ? 1 : 0.5 }}>
+                  {TIPOS_SIGNO[rec.tipo]}{formatCOP(rec.monto)}
+                </p>
+
+                {(cuentasTexto || rec.categoria_nombre || rec.ultima_ejecucion) && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+                    {cuentasTexto && <span className="etiqueta" style={{ background: 'var(--card-hover)', color: 'var(--texto-secundario)' }}>{cuentasTexto}</span>}
                     {rec.categoria_nombre && (
-                      <span style={{ fontSize: 12, padding: '4px 10px', borderRadius: 10, background: rec.categoria_color + '22', color: rec.categoria_color }}>
+                      <span className="etiqueta" style={{ background: rec.categoria_color + '22', color: 'var(--texto-secundario)' }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: rec.categoria_color }} />
                         {rec.categoria_nombre}
                       </span>
                     )}
                     {rec.ultima_ejecucion && (
-                      <span style={{ fontSize: 12, padding: '4px 10px', borderRadius: 10, background: 'var(--card-hover)', color: 'var(--texto-terciario)' }}>
+                      <span className="etiqueta" style={{ background: 'var(--card-hover)', color: 'var(--texto-terciario)' }}>
                         Última: {new Date(rec.ultima_ejecucion + 'T00:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })}
                       </span>
                     )}
                   </div>
                 )}
 
-                {/* — Acciones — */}
-                {confirmEliminar === rec.id ? (
-                  <div style={{
-                    background: 'var(--gasto-suave)', borderRadius: 12, padding: '12px 14px',
-                    display: 'flex', alignItems: 'center', gap: 10,
-                  }}>
-                    <p style={{ fontSize: 13, color: 'var(--texto-primario)', flex: 1 }}>
-                      ¿Eliminar esta plantilla?
-                    </p>
-                    <button onClick={() => eliminar(rec.id)} style={{
-                      background: 'var(--gasto)', color: '#fff', border: 'none',
-                      borderRadius: 10, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                    }}>Sí, eliminar</button>
-                    <button onClick={() => setConfirmEliminar(null)} style={{
-                      background: 'var(--card)', color: 'var(--texto-secundario)', border: 'none',
-                      borderRadius: 10, padding: '8px 14px', fontSize: 13, cursor: 'pointer',
-                    }}>Cancelar</button>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <button
-                      onClick={() => registrarAhora(rec)}
-                      disabled={!rec.activa || enRegistro}
-                      className="btn-primario"
-                      style={{
-                        flex: 1, padding: '11px', fontSize: 14,
-                        background: enFeedback ? 'var(--ingreso)' : undefined,
-                      }}
-                    >
-                      {enFeedback ? '✓ Registrada' : enRegistro ? 'Registrando...' : 'Registrar ahora'}
-                    </button>
-                    <button onClick={() => abrirEditar(rec)} style={{
-                      width: 40, height: 40, borderRadius: 12, flexShrink: 0,
-                      background: 'var(--card-hover)', color: 'var(--texto-secundario)',
-                      border: 'none', cursor: 'pointer', fontSize: 16,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      ✏️
-                    </button>
-                    <button onClick={() => setConfirmEliminar(rec.id)} style={{
-                      width: 40, height: 40, borderRadius: 12, flexShrink: 0,
-                      background: 'var(--card-hover)', color: 'var(--texto-terciario)',
-                      border: 'none', cursor: 'pointer', fontSize: 18, fontWeight: 400,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      🗑
-                    </button>
-                  </div>
-                )}
-              </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    onClick={() => registrarAhora(rec)}
+                    disabled={!rec.activa || enRegistro}
+                    className={enFeedback ? 'btn-primario' : 'btn-tinte'}
+                    style={{ flex: 1, minHeight: 44, fontSize: 15, background: enFeedback ? 'var(--ingreso)' : undefined }}
+                    aria-live="polite"
+                  >
+                    {enFeedback
+                      ? <><Icono nombre="check" size={17} grosor={2.6} />Registrada</>
+                      : enRegistro ? 'Registrando…' : 'Registrar ahora'}
+                  </button>
+                  <button onClick={() => abrirEditar(rec)} className="btn-secundario" aria-label={`Editar ${rec.nombre}`}
+                    style={{ width: 44, minHeight: 44, padding: 0, flexShrink: 0 }}>
+                    <Icono nombre="lapiz" size={17} />
+                  </button>
+                </div>
+              </article>
             )
           })}
         </div>
       )}
 
-      {/* Modal crear — se eleva SOBRE el navbar */}
-      {modal && (
-        <div onClick={cerrarModal} style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
-          backdropFilter: 'blur(4px)', zIndex: 200,
-          display: 'flex', alignItems: 'flex-end',
-        }}>
-          <div onClick={e => e.stopPropagation()} style={{
-            background: 'var(--card)', borderRadius: '24px 24px 0 0',
-            padding: '24px 20px',
-            paddingBottom: 'calc(var(--nav-height) + 20px)',
-            width: '100%', maxWidth: 430, margin: '0 auto',
-            maxHeight: '92vh', overflowY: 'auto',
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <h2 style={{ fontSize: 18, fontWeight: 700 }}>{editandoId ? 'Editar plantilla' : 'Nueva plantilla recurrente'}</h2>
-              <button onClick={cerrarModal} style={{
-                background: 'var(--card-hover)', border: 'none', borderRadius: '50%',
-                width: 32, height: 32, cursor: 'pointer', color: 'var(--texto-secundario)', fontSize: 18,
-              }}>×</button>
-            </div>
-
-            {/* Tipo */}
-            <label className="label" style={{ marginBottom: 8, display: 'block' }}>Tipo</label>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-              {['gasto', 'ingreso', 'ahorro'].map(t => (
-                <button key={t} onClick={() => setForm(f => ({ ...f, tipo: t, cuenta_origen: '', cuenta_destino: '', categoria: '' }))} style={{
-                  flex: 1, padding: '10px 4px', borderRadius: 12, cursor: 'pointer',
-                  background: form.tipo === t ? TIPOS_COLOR[t] : 'var(--card-hover)',
-                  color: form.tipo === t ? '#fff' : 'var(--texto-secundario)',
-                  border: 'none', fontWeight: 600, fontSize: 13, textTransform: 'capitalize',
-                }}>{t}</button>
-              ))}
-            </div>
-
-            <label className="label" style={{ marginBottom: 6, display: 'block' }}>Nombre</label>
-            <input className="input" placeholder="Ej: Netflix, Arriendo, Sueldo..." value={form.nombre} onChange={set('nombre')} style={{ marginBottom: 14 }} />
-
-            <label className="label" style={{ marginBottom: 6, display: 'block' }}>Monto (COP)</label>
-            <input className="input" type="number" placeholder="0" value={form.monto} onChange={set('monto')} style={{ marginBottom: 14 }} />
-
-            {/* Frecuencia */}
-            <label className="label" style={{ marginBottom: 8, display: 'block' }}>Frecuencia</label>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-              {FRECUENCIAS.map(f => (
-                <button key={f.valor} onClick={() => setForm(fm => ({ ...fm, frecuencia: f.valor, dia_ejecucion: '' }))} style={{
-                  padding: '8px 14px', borderRadius: 20, cursor: 'pointer', fontSize: 13, fontWeight: 500,
-                  background: form.frecuencia === f.valor ? 'var(--acento-suave)' : 'var(--card-hover)',
-                  color: form.frecuencia === f.valor ? 'var(--acento)' : 'var(--texto-secundario)',
-                  border: form.frecuencia === f.valor ? '1.5px solid var(--acento)' : '0.5px solid var(--borde)',
-                }}>
-                  {f.icono} {f.etiqueta}
-                </button>
-              ))}
-            </div>
-
-            {/* Día de ejecución — contextual según frecuencia */}
-            {necesitaDia && (
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <label className="label" style={{ margin: 0 }}>
-                    {form.frecuencia === 'semanal' ? '¿Qué día de la semana?' :
-                     form.frecuencia === 'quincenal' ? '¿Día base? (ese día y +15)' :
-                     '¿Qué día del mes?'}
-                  </label>
-                  {form.dia_ejecucion && (
-                    <span style={{ fontSize: 11, color: 'var(--acento)', background: 'var(--acento-suave)', padding: '3px 8px', borderRadius: 20 }}>
-                      🤖 auto-registra
-                    </span>
-                  )}
-                </div>
-
-                {form.frecuencia === 'semanal' ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 5 }}>
-                    {DIAS_SEMANA.map(d => {
-                      const sel = form.dia_ejecucion === d.valor
-                      return (
-                        <button key={d.valor} type="button"
-                          onClick={() => setForm(f => ({ ...f, dia_ejecucion: sel ? null : d.valor }))} style={{
-                          padding: '10px 2px', borderRadius: 10, cursor: 'pointer', border: 'none',
-                          background: sel ? 'var(--acento)' : 'var(--card-hover)',
-                          color: sel ? '#fff' : 'var(--texto-secundario)',
-                          fontWeight: sel ? 700 : 400, fontSize: 12, transition: 'all 0.15s',
-                        }}>
-                          {d.etiqueta.slice(0, 2)}
-                        </button>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <DayPickerDropdown
-                    value={form.dia_ejecucion}
-                    onChange={(d) => setForm(f => ({ ...f, dia_ejecucion: d }))}
-                    maxDia={form.frecuencia === 'quincenal' ? 14 : 28}
-                  />
-                )}
-
-                {form.dia_ejecucion ? (
-                  <p style={{ fontSize: 12, color: 'var(--acento)', marginTop: 8, textAlign: 'center' }}>
-                    {form.frecuencia === 'semanal' && `Se registrará cada ${DIAS_SEMANA.find(d => d.valor === form.dia_ejecucion)?.etiqueta}`}
-                    {form.frecuencia === 'quincenal' && `Se registrará el día ${form.dia_ejecucion} y el ${form.dia_ejecucion + 15} de cada mes`}
-                    {form.frecuencia === 'mensual' && `Se registrará el día ${form.dia_ejecucion} de cada mes`}
-                  </p>
-                ) : (
-                  <p style={{ fontSize: 12, color: 'var(--texto-terciario)', marginTop: 8, textAlign: 'center' }}>
-                    Sin día → solo se registra con "Registrar ahora"
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Cuentas */}
-            {(form.tipo === 'gasto' || form.tipo === 'ahorro') && (
-              <>
-                <label className="label" style={{ marginBottom: 6, display: 'block' }}>
-                  {form.tipo === 'ahorro' ? 'Cuenta origen' : 'Cuenta'}
-                </label>
-                <select className="input" value={form.cuenta_origen} onChange={set('cuenta_origen')} style={{ marginBottom: 14 }}>
-                  <option value="">Seleccionar cuenta...</option>
-                  {cuentas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                </select>
-              </>
-            )}
-            {(form.tipo === 'ingreso' || form.tipo === 'ahorro') && (
-              <>
-                <label className="label" style={{ marginBottom: 6, display: 'block' }}>
-                  {form.tipo === 'ahorro' ? 'Cuenta destino' : 'Cuenta'}
-                </label>
-                <select className="input" value={form.cuenta_destino} onChange={set('cuenta_destino')} style={{ marginBottom: 14 }}>
-                  <option value="">Seleccionar cuenta...</option>
-                  {cuentas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                </select>
-              </>
-            )}
-
-            {/* Categoría */}
-            {categoriasFiltradas.length > 0 && (
-              <>
-                <label className="label" style={{ marginBottom: 6, display: 'block' }}>Categoría (opcional)</label>
-                <select className="input" value={form.categoria} onChange={set('categoria')} style={{ marginBottom: 14 }}>
-                  <option value="">Sin categoría</option>
-                  {categoriasFiltradas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                </select>
-              </>
-            )}
-
-            {errorForm && (
-              <p style={{ color: 'var(--gasto)', fontSize: 13, background: 'var(--gasto-suave)', padding: '10px 14px', borderRadius: 10, marginBottom: 14 }}>
-                {errorForm}
-              </p>
-            )}
-
-            <button onClick={guardar} disabled={guardando} className="btn-primario" style={{ width: '100%', padding: 14, fontSize: 15 }}>
-              {guardando ? 'Guardando...' : editandoId ? 'Guardar cambios' : 'Crear plantilla'}
+      {/* Crear / editar */}
+      <Sheet
+        abierto={modal}
+        onCerrar={cerrarModal}
+        titulo={editandoId ? 'Editar plantilla' : 'Nueva plantilla'}
+        pie={
+          <>
+            <button onClick={guardar} disabled={guardando} className="btn-primario">
+              {guardando ? 'Guardando…' : editandoId ? 'Guardar cambios' : 'Crear plantilla'}
             </button>
-          </div>
+            {editandoId && (
+              <button className="btn-texto peligro" onClick={() => setConfirmAbierto(true)}>Eliminar plantilla</button>
+            )}
+          </>
+        }
+      >
+        <div className="campo">
+          <Segmentado
+            etiqueta="Tipo"
+            opciones={TIPOS_TRANSACCION}
+            valor={form.tipo}
+            onChange={t => setForm(f => ({ ...f, tipo: t, cuenta_origen: '', cuenta_destino: '', categoria: '' }))}
+          />
         </div>
-      )}
-    </div>
+
+        <div className="campo">
+          <label className="label" htmlFor="rec-nombre">Nombre</label>
+          <input id="rec-nombre" className="input" placeholder="Ej: Netflix, arriendo, sueldo…" value={form.nombre}
+            onChange={set('nombre')} autoCapitalize="sentences" enterKeyHint="next" />
+        </div>
+
+        <div className="campo">
+          <label className="label" htmlFor="rec-monto">Monto</label>
+          <CampoMonto id="rec-monto" valor={form.monto} onChange={monto => setForm(f => ({ ...f, monto }))} />
+        </div>
+
+        <div className="campo">
+          <p className="label">Frecuencia</p>
+          <Segmentado
+            etiqueta="Frecuencia"
+            opciones={FRECUENCIAS}
+            valor={form.frecuencia}
+            onChange={frecuencia => setForm(f => ({ ...f, frecuencia, dia_ejecucion: null }))}
+          />
+        </div>
+
+        {necesitaDia && (
+          <div className="campo">
+            <p className="label">
+              {form.frecuencia === 'semanal' ? 'Día de la semana'
+                : form.frecuencia === 'quincenal' ? 'Día base (ese día y 15 días después)'
+                : 'Día del mes'}
+              <span style={{ color: 'var(--texto-terciario)' }}> · opcional</span>
+            </p>
+            <div className="card" style={{ padding: 8, background: 'var(--card-hover)', borderRadius: 14 }}>
+              {form.frecuencia === 'semanal' ? (
+                <div role="radiogroup" aria-label="Día de la semana" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+                  {DIAS_SEMANA.map(d => {
+                    const sel = form.dia_ejecucion === d.valor
+                    return (
+                      <button key={d.valor} type="button" role="radio" aria-checked={sel} aria-label={d.etiqueta}
+                        onClick={() => setForm(f => ({ ...f, dia_ejecucion: sel ? null : d.valor }))}
+                        style={{
+                          height: 38, borderRadius: 10, fontSize: 14,
+                          background: sel ? 'var(--acento)' : 'transparent',
+                          color: sel ? '#fff' : 'var(--texto-primario)',
+                          fontWeight: sel ? 600 : 400,
+                          transition: 'background-color 150ms ease, color 150ms ease',
+                        }}>
+                        {d.etiqueta.slice(0, 2)}
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : (
+                <SelectorDia
+                  valor={form.dia_ejecucion}
+                  onChange={d => setForm(f => ({ ...f, dia_ejecucion: d }))}
+                  max={form.frecuencia === 'quincenal' ? 14 : 28}
+                />
+              )}
+            </div>
+            <p className="campo-ayuda" style={{ color: form.dia_ejecucion ? 'var(--acento)' : undefined }}>{textoProgramacion}</p>
+          </div>
+        )}
+
+        {(form.tipo === 'gasto' || form.tipo === 'ahorro') && (
+          <div className="campo">
+            <label className="label" htmlFor="rec-origen">{form.tipo === 'ahorro' ? 'Sale de' : 'Cuenta'}</label>
+            <select id="rec-origen" className="input" value={form.cuenta_origen} onChange={set('cuenta_origen')}>
+              <option value="">Seleccionar cuenta…</option>
+              {cuentas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          </div>
+        )}
+        {(form.tipo === 'ingreso' || form.tipo === 'ahorro') && (
+          <div className="campo">
+            <label className="label" htmlFor="rec-destino">{form.tipo === 'ahorro' ? 'Entra a' : 'Cuenta'}</label>
+            <select id="rec-destino" className="input" value={form.cuenta_destino} onChange={set('cuenta_destino')}>
+              <option value="">Seleccionar cuenta…</option>
+              {cuentas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          </div>
+        )}
+
+        {categoriasFiltradas.length > 0 && (
+          <div className="campo">
+            <label className="label" htmlFor="rec-cat">Categoría <span style={{ color: 'var(--texto-terciario)' }}>· opcional</span></label>
+            <select id="rec-cat" className="input" value={form.categoria} onChange={set('categoria')}>
+              <option value="">Sin categoría</option>
+              {categoriasFiltradas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          </div>
+        )}
+
+        <AvisoError>{errorForm}</AvisoError>
+      </Sheet>
+
+      <ConfirmarSheet
+        abierto={confirmAbierto}
+        onCerrar={() => setConfirmAbierto(false)}
+        titulo="¿Eliminar plantilla?"
+        mensaje={`"${form.nombre || 'Esta plantilla'}" dejará de registrarse. Las transacciones que ya creó se conservan.`}
+        textoConfirmar="Eliminar plantilla"
+        onConfirmar={eliminar}
+      />
+    </Pagina>
   )
 }
