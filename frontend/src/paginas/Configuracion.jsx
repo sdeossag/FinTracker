@@ -9,6 +9,7 @@ import {
 import Pagina from '../componentes/Pagina'
 import Icono from '../componentes/Icono'
 import Sheet from '../componentes/Sheet'
+import AtajoSheet from '../componentes/AtajoSheet'
 import { AvisoError, Interruptor, Segmentado } from '../componentes/Controles'
 
 // Mosaico de color con glifo blanco, como en Ajustes de iOS
@@ -40,6 +41,7 @@ export default function Configuracion() {
   const [passForm, setPassForm] = useState({ current: '', nueva: '', confirmar: '' })
   const [passError, setPassError] = useState('')
   const [guardandoPass, setGuardandoPass] = useState(false)
+  const [atajoAbierto, setAtajoAbierto] = useState(false)
 
   useEffect(() => {
     api.get('/perfil/').then(res => {
@@ -156,6 +158,22 @@ export default function Configuracion() {
         </button>
       </div>
 
+      {/* Registro automático */}
+      <h2 className="seccion-label">Automatización</h2>
+      <div className="lista-grupo">
+        <button className="fila" style={{ '--sangria': '58px', minHeight: 48 }} onClick={() => setAtajoAbierto(true)}>
+          <Mosaico icono="mensaje" color="#30D158" />
+          <span className="fila-cuerpo fila-titulo">Registrar desde SMS del banco</span>
+          <span className="fila-chevron"><Icono nombre="chevron-right" size={16} grosor={2.2} /></span>
+        </button>
+        <button className="fila" style={{ '--sangria': '58px', minHeight: 48 }} onClick={() => navigate('/revisar')}>
+          <Mosaico icono="bandeja" color="#FF9F0A" />
+          <span className="fila-cuerpo fila-titulo">SMS por revisar</span>
+          <span className="fila-chevron"><Icono nombre="chevron-right" size={16} grosor={2.2} /></span>
+        </button>
+      </div>
+      <p className="seccion-pie" style={{ marginBottom: 32 }}>Tus compras con tarjeta se anotan solas con un atajo del iPhone.</p>
+
       {/* Seguridad */}
       <h2 className="seccion-label">Seguridad</h2>
       <div className="lista-grupo" style={{ marginBottom: 32 }}>
@@ -222,6 +240,8 @@ export default function Configuracion() {
       </div>
 
       <p className="texto-mini" style={{ textAlign: 'center', marginTop: 28 }}>FinTracker · Versión 1.0</p>
+
+      <AtajoSheet abierto={atajoAbierto} onCerrar={() => setAtajoAbierto(false)} />
 
       {/* Editar perfil */}
       <Sheet

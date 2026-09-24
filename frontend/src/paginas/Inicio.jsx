@@ -23,6 +23,7 @@ export default function Inicio() {
   const [cargando, setCargando] = useState(true)
   const [errorCarga, setErrorCarga] = useState(false)
   const [intento, setIntento] = useState(0)
+  const [porRevisar, setPorRevisar] = useState(0)
   const [notifEstado, setNotifEstado] = useState(() => estadoPermiso())
   const [notifActivas, setNotifActivas] = useState(() => notifHabilitadas())
 
@@ -30,16 +31,18 @@ export default function Inicio() {
     const cargarDatos = async () => {
       try {
         // allSettled: si el perfil o el resumen fallan, las cuentas igual se muestran
-        const [resCuentas, resResumen, resPerfil] = await Promise.allSettled([
+        const [resCuentas, resResumen, resPerfil, resMensajes] = await Promise.allSettled([
           api.get('/cuentas/'),
           api.get('/transacciones/resumen-mes/'),
           api.get('/perfil/'),
+          api.get('/mensajes/', { params: { estado: 'pendiente' } }),
         ])
         if (resCuentas.status === 'rejected') { setErrorCarga(true); return }
         const ctas = ensureArray(resCuentas.value.data)
         setCuentas(ctas)
         if (resResumen.status === 'fulfilled') setResumen(ensureObject(resResumen.value.data))
         if (resPerfil.status === 'fulfilled') setUsername(resPerfil.value.data?.username || '')
+        if (resMensajes.status === 'fulfilled') setPorRevisar(ensureArray(resMensajes.value.data).length)
 
         const obKey = 'ft_ob_done'
         if (ctas.length === 0 && !localStorage.getItem(obKey)) {
@@ -202,6 +205,24 @@ export default function Inicio() {
               </div>
             </div>
           </section>
+
+          {/* ── SMS que necesitan un dato ── */}
+          {porRevisar > 0 && (
+            <div className="lista-grupo" style={{ marginBottom: porPagar.length ? 10 : 28 }}>
+              <button className="fila" onClick={() => navigate('/revisar')} style={{ minHeight: 60 }}>
+                <span className="mosaico sm" style={{ background: 'var(--acento)', color: '#fff' }}>
+                  <Icono nombre="mensaje" size={16} grosor={2.2} />
+                </span>
+                <div className="fila-cuerpo">
+                  <p className="fila-titulo" style={{ fontSize: 15, fontWeight: 600 }}>
+                    {porRevisar === 1 ? '1 SMS por revisar' : `${porRevisar} SMS por revisar`}
+                  </p>
+                  <p className="fila-sub">{porRevisar === 1 ? 'Toca para completarlo' : 'Toca para completarlos'}</p>
+                </div>
+                <span className="fila-chevron"><Icono nombre="chevron-right" size={16} grosor={2.2} /></span>
+              </button>
+            </div>
+          )}
 
           {/* ── Tarjetas por pagar: solo si vencen pronto ── */}
           {porPagar.length > 0 && (

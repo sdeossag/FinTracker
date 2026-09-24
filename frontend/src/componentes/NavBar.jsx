@@ -39,7 +39,7 @@ const IconoMas = () => (
 /* ── Items ──────────────────────────────────────────── */
 // "relacionadas": pantallas a las que se llega desde esa pestaña (wayfinding)
 const ITEMS = [
-  { id: 'inicio',    path: '/',              label: 'Inicio',   Icon: IconoInicio,    relacionadas: ['/configuracion'] },
+  { id: 'inicio',    path: '/',              label: 'Inicio',   Icon: IconoInicio,    relacionadas: ['/configuracion', '/revisar'] },
   { id: 'historial', path: '/transacciones', label: 'Historial', Icon: IconoHistorial, relacionadas: ['/recurrentes', '/editar'] },
   { id: 'nueva',     path: '/nueva',         label: 'Nueva',    isFab: true },
   { id: 'cuentas',   path: '/cuentas',       label: 'Cuentas',  Icon: IconoCuentas,   relacionadas: [] },

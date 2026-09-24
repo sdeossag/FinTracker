@@ -18,6 +18,10 @@ class PerfilUsuario(models.Model):
     creado_en = models.DateTimeField(auto_now_add=True)
     # Challenge temporal de WebAuthn — se sobreescribe en cada intento
     webauthn_challenge = models.CharField(max_length=256, blank=True, default='')
+    # Token del atajo de iPhone que envía los SMS del banco. Solo se guarda su hash.
+    token_ingesta = models.CharField(max_length=64, blank=True, default='', db_index=True)
+    token_ingesta_creado = models.DateTimeField(null=True, blank=True)
+    token_ingesta_usado = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name = 'Perfil de usuario'
@@ -54,6 +58,10 @@ class Cuenta(models.Model):
     cupo = models.BigIntegerField(null=True, blank=True)
     dia_corte = models.PositiveSmallIntegerField(null=True, blank=True)  # 1-31
     dia_pago = models.PositiveSmallIntegerField(null=True, blank=True)   # 1-31, fecha límite
+
+    # Cómo aparece la cuenta en los SMS del banco: últimos dígitos de tarjetas y cuentas,
+    # o una palabra para billeteras sin número. Separados por espacio: "8174 5284", "nequi".
+    terminaciones = models.CharField(max_length=120, blank=True, default='')
 
     class Meta:
         ordering = ['nombre']
@@ -179,6 +187,12 @@ class Transaccion(models.Model):
         on_delete=models.SET_NULL,
         related_name='transacciones',
     )
+
+    ORIGENES = [
+        ('manual', 'Manual'),
+        ('sms', 'SMS del banco'),
+    ]
+    origen = models.CharField(max_length=10, choices=ORIGENES, default='manual')
 
     notas = models.TextField(blank=True, default='')
     creada_en = models.DateTimeField(auto_now_add=True)
@@ -310,3 +324,47 @@ class UserCredential(models.Model):
 
     def __str__(self):
         return f'Llave {self.nickname} — {self.usuario.username}'
+
+class MensajeBanco(models.Model):
+    """
+    SMS del banco recibido por el atajo del iPhone.
+    Si se entiende y se sabe de qué cuenta es, se registra solo; si no, queda por revisar.
+    """
+
+    ESTADOS = [
+        ('registrado', 'Registrado'),
+        ('pendiente', 'Por revisar'),
+        ('descartado', 'Descartado'),
+    ]
+    METODOS = [
+        ('patron', 'Patrón conocido'),
+        ('ia', 'IA'),
+        ('ninguno', 'No reconocido'),
+    ]
+
+    usuario = models.ForeignKey(User, on_delete=models.CASCADE, related_name='mensajes_banco')
+    remitente = models.CharField(max_length=40, blank=True, default='')
+    # Texto con los números largos enmascarados (llaves, cuentas de terceros)
+    texto = models.TextField()
+    # Hash del texto original: el mismo SMS no se registra dos veces
+    huella = models.CharField(max_length=64)
+    recibido_en = models.DateTimeField(auto_now_add=True)
+    estado = models.CharField(max_length=12, choices=ESTADOS, default='pendiente')
+    metodo = models.CharField(max_length=10, choices=METODOS, default='ninguno')
+    # Lo que se entendió: clase, monto, comercio, dígitos, fecha…
+    datos = models.JSONField(default=dict, blank=True)
+    motivo = models.CharField(max_length=200, blank=True, default='')
+    transaccion = models.ForeignKey(
+        Transaccion, null=True, blank=True, on_delete=models.SET_NULL, related_name='mensajes',
+    )
+
+    class Meta:
+        ordering = ['-recibido_en']
+        verbose_name = 'Mensaje del banco'
+        verbose_name_plural = 'Mensajes del banco'
+        constraints = [
+            models.UniqueConstraint(fields=['usuario', 'huella'], name='mensaje_unico_por_usuario'),
+        ]
+
+    def __str__(self):
+        return f'{self.remitente}: {self.texto[:40]}'

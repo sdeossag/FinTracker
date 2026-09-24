@@ -338,6 +338,11 @@ export default function Transacciones() {
                           {busqueda ? <Resaltar texto={t.nombre} busqueda={busqueda} /> : t.nombre}
                         </p>
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 3, overflow: 'hidden' }}>
+                          {t.origen === 'sms' && (
+                            <span className="etiqueta" title="Registrado desde un SMS del banco" style={{ background: 'var(--acento-suave)', color: 'var(--acento)' }}>
+                              <Icono nombre="mensaje" size={11} grosor={2.4} />SMS
+                            </span>
+                          )}
                           {cats.slice(0, 2).map(cat => (
                             <span key={cat.id} className="etiqueta" style={{ background: cat.color_hex + '22', color: 'var(--texto-secundario)' }}>
                               <span style={{ width: 6, height: 6, borderRadius: '50%', background: cat.color_hex }} />

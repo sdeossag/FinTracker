@@ -13,6 +13,7 @@ import Registro from './paginas/Registro'
 import Biometria from './paginas/Biometria'
 import Onboarding from './paginas/Onboarding'
 import Recurrentes from './paginas/Recurrentes'
+import Revisar from './paginas/Revisar'
 import EditarTransaccion from './paginas/EditarTransaccion'
 import NavBar from './componentes/NavBar'
 import ProtectedRoute from './componentes/ProtectedRoute'
@@ -50,6 +51,7 @@ function AppContent() {
         <Route path="/cuentas" element={<ProtectedRoute><Cuentas /></ProtectedRoute>} />
         <Route path="/presupuesto" element={<ProtectedRoute><Presupuesto /></ProtectedRoute>} />
         <Route path="/recurrentes" element={<ProtectedRoute><Recurrentes /></ProtectedRoute>} />
+        <Route path="/revisar" element={<ProtectedRoute><Revisar /></ProtectedRoute>} />
         <Route path="/editar/:id" element={<ProtectedRoute><EditarTransaccion /></ProtectedRoute>} />
         <Route path="/graficas" element={<ProtectedRoute><Graficas /></ProtectedRoute>} />
         <Route path="/configuracion" element={<ProtectedRoute><Configuracion /></ProtectedRoute>} />

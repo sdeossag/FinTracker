@@ -18,7 +18,7 @@ const formInicial = (params) => {
     nombre: params.get('nombre') || '',
     monto: /^\d+$/.test(monto || '') ? monto : '',
     tipo: TIPOS_TRANSACCION.some(t => t.valor === tipo) ? tipo : 'gasto',
-    fecha: fechaLocalISO(),
+    fecha: /^\d{4}-\d{2}-\d{2}$/.test(params.get('fecha') || '') ? params.get('fecha') : fechaLocalISO(),
     cuenta_origen: params.get('origen') || '',
     cuenta_destino: params.get('destino') || '',
     categorias: [],
@@ -37,6 +37,8 @@ export default function NuevaTransaccion() {
   const [params] = useSearchParams()
   const [form, setForm] = useState(() => formInicial(params))
   const precargado = params.has('tipo')
+  // Desde la tarjeta o la bandeja de SMS: al guardar se vuelve allá
+  const volverAtras = precargado || params.has('mensaje')
   const [cuentas, setCuentas] = useState([])
   const [cargando, setCargando] = useState(true)
   const [categorias, setCategorias] = useState([])
@@ -99,11 +101,13 @@ export default function NuevaTransaccion() {
         cuenta_origen: form.cuenta_origen || null,
         cuenta_destino: form.cuenta_destino || null,
         categorias_ids: form.categorias,
+        // Viene de la bandeja de SMS: al guardar, el mensaje queda resuelto
+        ...(params.get('mensaje') ? { mensaje_banco: Number(params.get('mensaje')) } : {}),
       })
       vibrar()
       toast.success('Transacción registrada', { description: `${form.nombre.trim()} · ${formatCOP(form.monto)}` })
       // Desde el botón Pagar se vuelve a la tarjeta; si no, al historial
-      if (precargado && window.history.state?.idx > 0) navigate(-1)
+      if (volverAtras && window.history.state?.idx > 0) navigate(-1)
       else navigate('/transacciones')
     } catch (err) {
       console.error('Error guardando transacción:', err)

@@ -770,3 +770,60 @@ select.input {
 @media (max-width: 360px) {
   .segmented.lg .segmented-item { font-size: 0.8125rem; }
 }
+
+/* ── Pasos numerados (instrucciones) ─────────── */
+.pasos {
+  list-style: none;
+  counter-reset: paso;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0 0 14px;
+  padding: 0;
+}
+.pasos li {
+  counter-increment: paso;
+  position: relative;
+  padding-left: 36px;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: var(--texto-secundario);
+}
+.pasos li b { color: var(--texto-primario); font-weight: 600; }
+.pasos li::before {
+  content: counter(paso);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--acento-suave);
+  color: var(--acento);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pasos code, .sms-texto {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8125rem;
+}
+.pasos code {
+  color: var(--texto-primario);
+  background: var(--relleno);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+/* El SMS original, como cita */
+.sms-texto {
+  color: var(--texto-secundario);
+  line-height: 1.45;
+  border-left: 2px solid var(--separador);
+  padding-left: 10px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

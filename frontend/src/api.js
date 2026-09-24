@@ -3,6 +3,9 @@ import axios from 'axios'
 // En producción usa VITE_API_URL; en dev usa el proxy de Vite
 const BASE_URL = import.meta.env.VITE_API_URL || '/api'
 
+// Para compartir fuera de la app (p. ej. el atajo del iPhone): siempre con dominio
+export const API_URL_ABSOLUTA = new URL(BASE_URL, window.location.origin).href.replace(/\/$/, '')
+
 const api = axios.create({
   baseURL: BASE_URL,
 })

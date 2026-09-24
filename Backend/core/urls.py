@@ -12,6 +12,7 @@ from .views import (
     PerfilView,
     CambiarPasswordView,
     RegistroView,
+    IngestaSMSView, TokenIngestaView, ProbarSMSView, MensajeBancoViewSet,
 )
 
 # El router genera automáticamente todos los endpoints CRUD
@@ -20,6 +21,7 @@ router.register(r'cuentas', CuentaViewSet, basename='cuenta')
 router.register(r'categorias', CategoriaViewSet, basename='categoria')
 router.register(r'transacciones', TransaccionViewSet, basename='transaccion')
 router.register(r'recurrentes', TransaccionRecurrenteViewSet, basename='recurrente')
+router.register(r'mensajes', MensajeBancoViewSet, basename='mensaje')
 
 urlpatterns = [
     path('', include(router.urls)),
@@ -32,4 +34,7 @@ urlpatterns = [
     path('perfil/', PerfilView.as_view(), name='perfil'),
     path('cambiar-password/', CambiarPasswordView.as_view(), name='cambiar-password'),
     path('registro/', RegistroView.as_view(), name='registro'),
+    path('ingesta/sms/', IngestaSMSView.as_view(), name='ingesta-sms'),
+    path('ingesta/token/', TokenIngestaView.as_view(), name='ingesta-token'),
+    path('ingesta/probar/', ProbarSMSView.as_view(), name='ingesta-probar'),
 ]

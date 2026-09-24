@@ -14,7 +14,7 @@ import {
 const COLORES = ['#34C759', '#0A84FF', '#BF5AF2', '#FF9F0A', '#FFD60A', '#FF453A', '#64D2FF', '#FF375F']
 const cuentaVacia = {
   nombre: '', tipo: 'activo', balance_inicial: '', color_hex: '#0A84FF',
-  cupo: '', dia_corte: '', dia_pago: '',
+  cupo: '', dia_corte: '', dia_pago: '', terminaciones: '',
   _balance_actual_ref: 0, _balance_inicial_ref: 0,
 }
 const DIAS = Array.from({ length: 31 }, (_, i) => i + 1)
@@ -64,6 +64,7 @@ export default function Cuentas() {
       cupo: cuenta.cupo != null ? String(cuenta.cupo) : '',
       dia_corte: cuenta.dia_corte ? String(cuenta.dia_corte) : '',
       dia_pago: cuenta.dia_pago ? String(cuenta.dia_pago) : '',
+      terminaciones: cuenta.terminaciones || '',
       _balance_actual_ref: cuenta.balance_actual,
       _balance_inicial_ref: cuenta.balance_inicial,
       _balance_actual_editable: String(cuenta.balance_actual),
@@ -113,6 +114,7 @@ export default function Cuentas() {
         tipo: form.tipo,
         balance_inicial: balanceInicialFinal,
         color_hex: form.color_hex,
+        terminaciones: form.terminaciones,
         ...(form.tipo === 'credito' ? {
           cupo: form.cupo ? parseInt(form.cupo) : null,
           dia_corte: parseInt(form.dia_corte),
@@ -347,6 +349,23 @@ export default function Cuentas() {
             {esTarjeta && <p className="campo-ayuda">Todo lo que debes en la tarjeta, incluidas las compras recientes.</p>}
           </div>
         )}
+
+        <div className="campo">
+          <label className="label" htmlFor="cuenta-terminaciones">
+            Números en los SMS <span style={{ color: 'var(--texto-terciario)' }}>· opcional</span>
+          </label>
+          <input
+            id="cuenta-terminaciones"
+            className="input"
+            placeholder={esTarjeta ? 'Ej: 7992' : 'Ej: 8174, 5284'}
+            value={form.terminaciones}
+            onChange={e => setForm({ ...form, terminaciones: e.target.value })}
+            inputMode="text"
+            autoCapitalize="none"
+            autoCorrect="off"
+          />
+          <p className="campo-ayuda">Los últimos dígitos con que tu banco nombra esta cuenta o tarjeta en los SMS (*7992). Así se registran solos.</p>
+        </div>
 
         <div className="campo">
           <p className="label">Color</p>

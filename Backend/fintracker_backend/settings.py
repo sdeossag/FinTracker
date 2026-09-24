@@ -112,6 +112,8 @@ REST_FRAMEWORK = {
     ],
     'UNAUTHENTICATED_USER': None,
     'DEFAULT_PAGINATION_CLASS': None,
+    # El endpoint del atajo es público (con token propio): límite contra abusos
+    'DEFAULT_THROTTLE_RATES': {'ingesta': '120/hour'},
 }
 
 SITE_ID = 1

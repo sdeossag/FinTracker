@@ -1,9 +1,13 @@
 # Serializers de FinTracker — convierten modelos a JSON y viceversa
+import re
+
 from django.utils import timezone
 from rest_framework import serializers
 
 from .tarjetas import estados_tarjetas
-from .models import Cuenta, Categoria, Transaccion, TransaccionCategoria, TransaccionRecurrente, UserCredential
+from .models import (
+    Cuenta, Categoria, MensajeBanco, Transaccion, TransaccionCategoria, TransaccionRecurrente, UserCredential,
+)
 
 class UserCredentialSerializer(serializers.ModelSerializer):
     class Meta:
@@ -70,7 +74,7 @@ class CuentaSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'nombre', 'tipo', 'balance_inicial',
             'balance_actual', 'color_hex', 'activa', 'creada_en',
-            'cupo', 'dia_corte', 'dia_pago', 'estado_tarjeta',
+            'cupo', 'dia_corte', 'dia_pago', 'estado_tarjeta', 'terminaciones',
         ]
         read_only_fields = ['creada_en']
         extra_kwargs = {
@@ -84,6 +88,19 @@ class CuentaSerializer(serializers.ModelSerializer):
         if estados is None:
             estados = estados_tarjetas([cuenta], timezone.localdate())
         return estados.get(cuenta.id)
+
+    def validate_terminaciones(self, valor):
+        """'*8174, 5284 · Nequi' → '8174 5284 nequi' (últimos 4 dígitos o una palabra)."""
+        fichas = []
+        for t in re.split(r'[\s,;·*]+', valor or ''):
+            t = t.lower()
+            if t.isdigit() and len(t) >= 3:
+                t = t[-4:]
+            elif not t.isalpha():
+                continue
+            if t not in fichas:
+                fichas.append(t)
+        return ' '.join(fichas)
 
     def validate(self, data):
         tipo = data.get('tipo', getattr(self.instance, 'tipo', 'activo'))
@@ -151,6 +168,9 @@ class TransaccionSerializer(SoloDelUsuarioMixin, serializers.ModelSerializer):
         read_only=True,
         default=None,
     )
+    # Id del SMS de la bandeja que se está registrando a mano
+    mensaje_banco = serializers.IntegerField(write_only=True, required=False)
+    origen = serializers.CharField(read_only=True)
     # Para mostrar "Pago de tarjeta" cuando una transferencia va a una deuda
     cuenta_destino_tipo = serializers.CharField(
         source='cuenta_destino.tipo',
@@ -164,7 +184,7 @@ class TransaccionSerializer(SoloDelUsuarioMixin, serializers.ModelSerializer):
             'id', 'nombre', 'monto', 'fecha', 'tipo',
             'cuenta_origen', 'cuenta_destino',
             'cuenta_origen_nombre', 'cuenta_destino_nombre', 'cuenta_destino_tipo',
-            'categorias', 'categorias_ids',
+            'categorias', 'categorias_ids', 'origen', 'mensaje_banco',
             'notas', 'creada_en',
         ]
         read_only_fields = ['creada_en']
@@ -189,13 +209,20 @@ class TransaccionSerializer(SoloDelUsuarioMixin, serializers.ModelSerializer):
 
     def create(self, validated_data):
         categorias_ids = validated_data.pop('categorias_ids', [])
+        mensaje_id = validated_data.pop('mensaje_banco', None)
         usuario = self.context['request'].user
         transaccion = Transaccion.objects.create(usuario=usuario, **validated_data)
         asignar_categorias(transaccion, categorias_ids, usuario)
+        # Registrada a mano desde la bandeja: el SMS queda resuelto
+        if mensaje_id:
+            MensajeBanco.objects.filter(pk=mensaje_id, usuario=usuario, estado='pendiente').update(
+                estado='registrado', transaccion=transaccion, motivo='',
+            )
         return transaccion
 
     def update(self, instance, validated_data):
         categorias_ids = validated_data.pop('categorias_ids', None)
+        validated_data.pop('mensaje_banco', None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
@@ -227,3 +254,23 @@ class TransaccionRecurrenteSerializer(SoloDelUsuarioMixin, serializers.ModelSeri
     def create(self, validated_data):
         validated_data['usuario'] = self.context['request'].user
         return super().create(validated_data)
+
+class MensajeBancoSerializer(serializers.ModelSerializer):
+    transaccion_nombre = serializers.CharField(source='transaccion.nombre', read_only=True, default=None)
+    # Cómo aparece la cuenta en el SMS (*7992, nequi): para preguntar cuál es
+    identificador = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MensajeBanco
+        fields = [
+            'id', 'remitente', 'texto', 'recibido_en', 'estado', 'metodo', 'datos', 'motivo',
+            'transaccion', 'transaccion_nombre', 'identificador',
+        ]
+        read_only_fields = fields
+
+    def get_identificador(self, msg):
+        from .ingesta import billetera
+        d = msg.datos.get('digitos') if isinstance(msg.datos, dict) else None
+        if d:
+            return d[-4:]
+        return billetera(msg.remitente, msg.texto)

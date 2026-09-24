@@ -9,10 +9,13 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 import base64
+import hashlib
+import secrets
 
 import json
 from webauthn import (
@@ -24,8 +27,15 @@ from webauthn.helpers import bytes_to_base64url
 from webauthn.helpers.structs import PublicKeyCredentialDescriptor
 
 from .tarjetas import estados_tarjetas
-from .models import Cuenta, Categoria, Transaccion, TransaccionCategoria, TransaccionRecurrente, UserCredential, PerfilUsuario
+from .ingesta import (
+    billetera, entender, plan_de_registro, procesar_sms, reprocesar_pendientes, resumen_para_atajo,
+)
+from .models import (
+    Cuenta, Categoria, MensajeBanco, Transaccion, TransaccionCategoria, TransaccionRecurrente,
+    UserCredential, PerfilUsuario,
+)
 from .serializers import (
+    MensajeBancoSerializer,
     CuentaSerializer,
     CategoriaSerializer,
     TransaccionSerializer,
@@ -657,3 +667,146 @@ class WebAuthnAuthVerifyView(APIView):
             return Response({'error': 'Credencial no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ── Registro automático por SMS ─────────────────────────────────────
+
+def _hash_token(token):
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+class IngestaSMSView(APIView):
+    """
+    Lo llama el atajo del iPhone cada vez que llega un SMS del banco.
+    Se autentica con un token propio (cabecera X-Token-Ingesta), no con la sesión:
+    el atajo no puede renovar un JWT.
+    """
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'ingesta'
+
+    def post(self, request):
+        token = request.headers.get('X-Token-Ingesta', '').strip()
+        perfil = (
+            PerfilUsuario.objects.select_related('usuario').filter(token_ingesta=_hash_token(token)).first()
+            if len(token) >= 20 else None
+        )
+        if not perfil:
+            return Response({'error': 'Token inválido.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        texto = str(request.data.get('texto', ''))[:1000]
+        if not texto.strip():
+            return Response({'error': 'El SMS llegó vacío.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        perfil.token_ingesta_usado = timezone.now()
+        perfil.save(update_fields=['token_ingesta_usado'])
+        msg, nuevo = procesar_sms(perfil.usuario, str(request.data.get('remitente', '')), texto)
+        return Response(
+            {'estado': msg.estado, 'mensaje': resumen_para_atajo(msg), 'repetido': not nuevo},
+            status=status.HTTP_201_CREATED if nuevo else status.HTTP_200_OK,
+        )
+
+
+class TokenIngestaView(APIView):
+    """Crear, consultar y revocar el token del atajo. El token solo se muestra al crearlo."""
+    permission_classes = [IsAuthenticated]
+
+    def _estado(self, perfil):
+        return {
+            'activo': bool(perfil.token_ingesta),
+            'creado_en': perfil.token_ingesta_creado,
+            'ultimo_uso': perfil.token_ingesta_usado,
+        }
+
+    def get(self, request):
+        return Response(self._estado(_get_or_create_perfil(request.user)))
+
+    def post(self, request):
+        perfil = _get_or_create_perfil(request.user)
+        token = secrets.token_urlsafe(32)
+        perfil.token_ingesta = _hash_token(token)
+        perfil.token_ingesta_creado = timezone.now()
+        perfil.token_ingesta_usado = None
+        perfil.save(update_fields=['token_ingesta', 'token_ingesta_creado', 'token_ingesta_usado'])
+        return Response({**self._estado(perfil), 'token': token}, status=status.HTTP_201_CREATED)
+
+    def delete(self, request):
+        perfil = _get_or_create_perfil(request.user)
+        perfil.token_ingesta = ''
+        perfil.save(update_fields=['token_ingesta'])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ProbarSMSView(APIView):
+    """Muestra qué se registraría con un SMS, sin guardar nada."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        texto = str(request.data.get('texto', ''))[:1000].strip()
+        if not texto:
+            return Response({'error': 'Pega el texto de un SMS.'}, status=status.HTTP_400_BAD_REQUEST)
+        remitente = str(request.data.get('remitente', ''))
+        datos, metodo, motivo = entender(remitente, texto)
+        if not datos or datos.get('clase') == 'otro':
+            return Response({'entendido': False, 'metodo': metodo, 'motivo': motivo})
+        cuentas = list(Cuenta.objects.filter(usuario=request.user, activa=True))
+        campos, motivo = plan_de_registro(
+            request.user, datos, cuentas, billetera(remitente, texto), timezone.localdate(),
+        )
+        if not campos:
+            return Response({'entendido': True, 'metodo': metodo, 'datos': datos, 'motivo': motivo})
+        return Response({
+            'entendido': True,
+            'metodo': metodo,
+            'datos': datos,
+            'registro': {
+                'tipo': campos['tipo'],
+                'nombre': campos['nombre'],
+                'monto': campos['monto'],
+                'fecha': campos['fecha'],
+                'cuenta_origen': getattr(campos.get('cuenta_origen'), 'nombre', None),
+                'cuenta_destino': getattr(campos.get('cuenta_destino'), 'nombre', None),
+            },
+        })
+
+
+class MensajeBancoViewSet(viewsets.ReadOnlyModelViewSet):
+    """Bandeja de SMS: los que quedaron por revisar y el historial de lo registrado."""
+    serializer_class = MensajeBancoSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = MensajeBanco.objects.filter(usuario=self.request.user).select_related('transaccion')
+        estado = self.request.query_params.get('estado')
+        return qs.filter(estado=estado) if estado else qs
+
+    def list(self, request, *args, **kwargs):
+        # Los últimos 100 bastan para la bandeja
+        return Response(self.get_serializer(self.get_queryset()[:100], many=True).data)
+
+    @action(detail=True, methods=['post'])
+    def descartar(self, request, pk=None):
+        msg = self.get_object()
+        msg.estado = 'descartado'
+        msg.save(update_fields=['estado'])
+        return Response(self.get_serializer(msg).data)
+
+    @action(detail=True, methods=['post'], url_path='asignar-cuenta')
+    def asignar_cuenta(self, request, pk=None):
+        """'*7992 es mi Visa': se guarda en la cuenta y se registra todo lo que esperaba."""
+        msg = self.get_object()
+        ident = msg.datos.get('digitos') or billetera(msg.remitente, msg.texto)
+        if not ident:
+            return Response({'error': 'Este SMS no trae número de cuenta.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            cuenta = Cuenta.objects.get(pk=request.data.get('cuenta'), usuario=request.user)
+        except (Cuenta.DoesNotExist, ValueError, TypeError):
+            return Response({'error': 'Elige una de tus cuentas.'}, status=status.HTTP_400_BAD_REQUEST)
+        ident = ident[-4:] if ident.isdigit() else ident.lower()
+        actuales = cuenta.terminaciones.split()
+        if ident not in actuales:
+            cuenta.terminaciones = ' '.join(actuales + [ident])
+            cuenta.save(update_fields=['terminaciones'])
+        registrados = reprocesar_pendientes(request.user)
+        return Response({'registrados': registrados, 'cuenta': cuenta.nombre, 'terminacion': ident})
