@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api, { ensureArray } from '../api'
 import Pagina from '../componentes/Pagina'
@@ -35,7 +35,9 @@ const TIPOS = [
   { valor: 'ahorro',  etiqueta: 'Ahorros' },
 ]
 
-const TIPO_COLOR = { gasto: 'var(--gasto)', ingreso: 'var(--ingreso)', ahorro: 'var(--ahorro)' }
+const POR_PAGINA = 60
+
+const TIPO_COLOR ={ gasto: 'var(--gasto)', ingreso: 'var(--ingreso)', ahorro: 'var(--ahorro)' }
 const TIPO_SIGNO = { gasto: '−', ingreso: '+', ahorro: '' }
 
 /* ── Panel de filtros ─────────────────────────────────── */
@@ -99,32 +101,72 @@ export default function Transacciones() {
   const meses = useMemo(() => getMeses(), [])
   const hayFiltros = filtroTipo !== 'todos' || !!filtroMes
 
+  // La búsqueda va al servidor (cubre todo el historial, no solo lo cargado)
+  const [consulta, setConsulta] = useState('')
   useEffect(() => {
+    const t = setTimeout(() => setConsulta(busqueda.trim()), 250)
+    return () => clearTimeout(t)
+  }, [busqueda])
+
+  // Historial por páginas: primero lo reciente, el resto al acercarse al final
+  const [siguiente, setSiguiente] = useState(null)
+  const [cargandoMas, setCargandoMas] = useState(false)
+  const [actualizando, setActualizando] = useState(false)
+  const peticion = useRef(0)
+  const centinela = useRef(null)
+
+  const pedirPagina = useCallback((antes) => {
+    const params = { limite: POR_PAGINA }
+    if (filtroTipo !== 'todos') params.tipo = filtroTipo
+    if (filtroMes) params.mes = filtroMes
+    if (consulta) params.q = consulta
+    if (antes) params.antes = antes
+    return api.get('/transacciones/', { params })
+  }, [filtroTipo, filtroMes, consulta])
+
+  useEffect(() => {
+    const id = ++peticion.current
     const cargar = async () => {
-      setCargando(true)
+      setActualizando(true)
       try {
-        const params = {}
-        if (filtroTipo !== 'todos') params.tipo = filtroTipo
-        if (filtroMes) params.mes = filtroMes
-        const res = await api.get('/transacciones/', { params })
-        setTransacciones(ensureArray(res.data))
+        const res = await pedirPagina()
+        if (id !== peticion.current) return          // llegó tarde: ya hay otra búsqueda
+        setTransacciones(ensureArray(res.data?.resultados))
+        setSiguiente(res.data?.siguiente || null)
       } catch (err) {
         console.error('Error cargando transacciones:', err)
       } finally {
-        setCargando(false)
+        if (id === peticion.current) { setCargando(false); setActualizando(false) }
       }
     }
     cargar()
-  }, [filtroTipo, filtroMes])
+  }, [pedirPagina])
 
-  const transaccionesFiltradas = useMemo(() => {
-    const q = busqueda.trim().toLowerCase()
-    if (!q) return transacciones
-    return transacciones.filter(t =>
-      t.nombre.toLowerCase().includes(q) ||
-      (t.categorias || []).some(c => c.nombre.toLowerCase().includes(q))
-    )
-  }, [transacciones, busqueda])
+  const cargarMas = useCallback(async () => {
+    if (!siguiente || cargandoMas) return
+    const id = peticion.current
+    setCargandoMas(true)
+    try {
+      const res = await pedirPagina(siguiente)
+      if (id !== peticion.current) return
+      setTransacciones(prev => [...prev, ...ensureArray(res.data?.resultados)])
+      setSiguiente(res.data?.siguiente || null)
+    } catch (err) {
+      console.error('Error cargando más transacciones:', err)
+    } finally {
+      setCargandoMas(false)
+    }
+  }, [siguiente, cargandoMas, pedirPagina])
+
+  useEffect(() => {
+    const el = centinela.current
+    if (!el || !siguiente) return
+    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) cargarMas() }, { rootMargin: '600px 0px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [siguiente, cargarMas])
+
+  const transaccionesFiltradas = transacciones
 
   const grupos = useMemo(() => {
     const map = {}
@@ -247,10 +289,14 @@ export default function Transacciones() {
           />
         )
       ) : (
-        <div className="aparecer" style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+        <div
+          className="aparecer"
+          aria-busy={actualizando}
+          style={{ display: 'flex', flexDirection: 'column', gap: 22, opacity: actualizando ? 0.6 : 1, transition: 'opacity 160ms var(--ease-out)' }}
+        >
           {busqueda && (
             <p className="texto-nota" style={{ marginBottom: -10, paddingLeft: 4 }}>
-              {transaccionesFiltradas.length} resultado{transaccionesFiltradas.length !== 1 ? 's' : ''}
+              {transaccionesFiltradas.length}{siguiente ? '+' : ''} resultado{transaccionesFiltradas.length !== 1 ? 's' : ''}
             </p>
           )}
 
@@ -302,6 +348,14 @@ export default function Transacciones() {
               </div>
             </section>
           ))}
+
+          {siguiente && (
+            <div ref={centinela} style={{ display: 'flex', justifyContent: 'center', padding: '4px 0 8px' }}>
+              <button className="btn-texto" onClick={cargarMas} disabled={cargandoMas} style={{ fontSize: 15 }}>
+                {cargandoMas ? 'Cargando…' : 'Ver más movimientos'}
+              </button>
+            </div>
+          )}
         </div>
       )}
 

@@ -56,20 +56,26 @@ class Cuenta(models.Model):
     def __str__(self):
         return f'{self.nombre} ({self.usuario.username})'
 
+    @staticmethod
+    def calcular_balance(tipo, inicial, entradas, salidas):
+        """
+        Activo: lo que tienes (entra suma, sale resta).
+        Pasivo: lo que debes (cargar a la deuda suma, abonarle resta).
+        """
+        if tipo == 'pasivo':
+            return inicial + salidas - entradas
+        return inicial + entradas - salidas
+
     @property
     def balance_actual(self):
-        """Calcula el balance real sumando todas las transacciones"""
-        from django.db.models import Sum
-
-        entradas = self.transacciones_destino.aggregate(
-            total=Sum('monto')
-        )['total'] or 0
-
-        salidas = self.transacciones_origen.aggregate(
-            total=Sum('monto')
-        )['total'] or 0
-
-        return self.balance_inicial + entradas - salidas
+        """Balance real. Usa las sumas anotadas por la vista si existen (1 consulta para todas)."""
+        entradas = getattr(self, 'total_entradas', None)
+        salidas = getattr(self, 'total_salidas', None)
+        if entradas is None or salidas is None:
+            from django.db.models import Sum
+            entradas = self.transacciones_destino.aggregate(total=Sum('monto'))['total'] or 0
+            salidas = self.transacciones_origen.aggregate(total=Sum('monto'))['total'] or 0
+        return self.calcular_balance(self.tipo, self.balance_inicial, entradas, salidas)
 
 
 class Categoria(models.Model):
@@ -116,6 +122,14 @@ class Transaccion(models.Model):
         ('ahorro', 'Ahorro'),
     ]
 
+    # Dueño directo: no depende de las cuentas (si se borra una cuenta,
+    # la transacción sigue en el historial) y permite indexar por usuario.
+    usuario = models.ForeignKey(
+        User,
+        null=True,
+        on_delete=models.CASCADE,
+        related_name='transacciones',
+    )
     nombre = models.CharField(max_length=200)
     monto = models.BigIntegerField()  # COP, siempre positivo
     fecha = models.DateField()
@@ -146,26 +160,37 @@ class Transaccion(models.Model):
         blank=True,
     )
 
+    # Plantilla que la generó (si fue auto-registrada). Evita duplicados por día.
+    recurrente = models.ForeignKey(
+        'TransaccionRecurrente',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='transacciones',
+    )
+
     notas = models.TextField(blank=True, default='')
     creada_en = models.DateTimeField(auto_now_add=True)
     actualizada_en = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['-fecha', '-creada_en']
+        ordering = ['-fecha', '-id']
         verbose_name = 'Transacción'
         verbose_name_plural = 'Transacciones'
+        indexes = [
+            # Historial, resumen del mes y gráficas: siempre usuario + rango de fechas
+            models.Index(fields=['usuario', '-fecha', '-id'], name='trans_usuario_fecha'),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['recurrente', 'fecha'],
+                condition=models.Q(recurrente__isnull=False),
+                name='recurrente_una_vez_por_dia',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.nombre} — ${self.monto:,}'
-
-    @property
-    def usuario(self):
-        """Infiere el usuario desde las cuentas asociadas"""
-        if self.cuenta_origen:
-            return self.cuenta_origen.usuario
-        if self.cuenta_destino:
-            return self.cuenta_destino.usuario
-        return None
 
 
 class TransaccionCategoria(models.Model):

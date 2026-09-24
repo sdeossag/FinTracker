@@ -1,5 +1,9 @@
 # Vistas de FinTracker — endpoints de la API REST
-from django.db.models import Sum
+from datetime import date
+
+from django.db import IntegrityError, transaction as db_transaction
+from django.db.models import BigIntegerField, Exists, OuterRef, Q, Subquery, Sum
+from django.db.models.functions import Coalesce, TruncMonth
 from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -31,6 +35,10 @@ from .serializers import (
 )
 
 
+# Solo aplica a contraseñas nuevas; las actuales siguen funcionando
+MIN_PASSWORD = 8
+
+
 class RegistroView(APIView):
     """Crea una nueva cuenta de usuario"""
     permission_classes = [AllowAny]
@@ -49,13 +57,34 @@ class RegistroView(APIView):
             return Response({'error': 'El usuario debe tener al menos 3 caracteres.'}, status=status.HTTP_400_BAD_REQUEST)
         if User.objects.filter(username=username).exists():
             return Response({'error': 'Ese nombre de usuario ya está en uso.'}, status=status.HTTP_400_BAD_REQUEST)
-        if len(password) < 4:
-            return Response({'error': 'La contraseña debe tener al menos 4 caracteres.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(password) < MIN_PASSWORD:
+            return Response({'error': f'La contraseña debe tener al menos {MIN_PASSWORD} caracteres.'}, status=status.HTTP_400_BAD_REQUEST)
         if password != confirm:
             return Response({'error': 'Las contraseñas no coinciden.'}, status=status.HTTP_400_BAD_REQUEST)
 
         user = User.objects.create_user(username=username, email=email, password=password)
         return Response({'status': 'ok', 'username': user.username}, status=status.HTTP_201_CREATED)
+
+
+def rango_mes(anio, mes):
+    """[primer día del mes, primer día del mes siguiente) — filtro por rango, usa el índice."""
+    inicio = date(anio, mes, 1)
+    fin = date(anio + 1, 1, 1) if mes == 12 else date(anio, mes + 1, 1)
+    return inicio, fin
+
+
+def restar_meses(anio, mes, n):
+    """Devuelve (año, mes) n meses antes."""
+    total = anio * 12 + (mes - 1) - n
+    return total // 12, total % 12 + 1
+
+
+def sumas_por_tipo(qs):
+    """Totales de ingresos, gastos y ahorros en una sola consulta."""
+    return qs.aggregate(**{
+        clave: Coalesce(Sum('monto', filter=Q(tipo=tipo)), 0)
+        for clave, tipo in (('ingresos', 'ingreso'), ('gastos', 'gasto'), ('ahorros', 'ahorro'))
+    })
 
 
 class CuentaViewSet(viewsets.ModelViewSet):
@@ -64,10 +93,23 @@ class CuentaViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # Cada usuario solo ve sus propias cuentas
+        # Entradas y salidas de todas las cuentas en la misma consulta (antes: 2 por cuenta)
+        def total(campo):
+            return Coalesce(
+                Subquery(
+                    Transaccion.objects.filter(**{campo: OuterRef('pk')})
+                    .order_by().values(campo).annotate(t=Sum('monto')).values('t'),
+                    output_field=BigIntegerField(),
+                ),
+                0,
+            )
+
         return Cuenta.objects.filter(
             usuario=self.request.user,
             activa=True,
+        ).annotate(
+            total_entradas=total('cuenta_destino'),
+            total_salidas=total('cuenta_origen'),
         )
 
 
@@ -95,21 +137,18 @@ class CategoriaViewSet(viewsets.ModelViewSet):
         Formato: { categoria_id: monto_gastado }
         """
         hoy = timezone.localdate()
-        transacciones = Transaccion.objects.filter(
-            cuenta_origen__usuario=request.user,
-            tipo='gasto',
-            fecha__year=hoy.year,
-            fecha__month=hoy.month,
+        inicio, fin = rango_mes(hoy.year, hoy.month)
+        filas = (
+            TransaccionCategoria.objects.filter(
+                transaccion__usuario=request.user,
+                transaccion__tipo='gasto',
+                transaccion__fecha__gte=inicio,
+                transaccion__fecha__lt=fin,
+            )
+            .values('categoria_id')
+            .annotate(total=Sum('transaccion__monto'))
         )
-
-        # Acumular gastos por categoría
-        resultado = {}
-        for t in transacciones:
-            for tc in t.transaccion_categorias.all():
-                cat_id = tc.categoria_id
-                resultado[cat_id] = resultado.get(cat_id, 0) + t.monto
-
-        return Response(resultado)
+        return Response({f['categoria_id']: f['total'] for f in filas})
 
 
 class TransaccionViewSet(viewsets.ModelViewSet):
@@ -117,30 +156,78 @@ class TransaccionViewSet(viewsets.ModelViewSet):
     serializer_class = TransaccionSerializer
     permission_classes = [IsAuthenticated]
 
+    LIMITE_MAXIMO = 200
+
     def get_queryset(self):
-        # Transacciones donde el usuario es dueño de alguna de las cuentas
-        qs = Transaccion.objects.filter(
-            cuenta_origen__usuario=self.request.user,
-        ) | Transaccion.objects.filter(
-            cuenta_destino__usuario=self.request.user,
+        # Cuentas y categorías en 2 consultas extra, no 3 por cada fila
+        qs = (
+            Transaccion.objects.filter(usuario=self.request.user)
+            .select_related('cuenta_origen', 'cuenta_destino')
+            .prefetch_related('transaccion_categorias__categoria')
+            .order_by('-fecha', '-id')
         )
-        qs = qs.distinct().order_by('-fecha', '-creada_en')
+        params = self.request.query_params
 
         # Filtro opcional por tipo: /api/transacciones/?tipo=gasto
-        tipo = self.request.query_params.get('tipo')
+        tipo = params.get('tipo')
         if tipo:
             qs = qs.filter(tipo=tipo)
 
         # Filtro opcional por mes: /api/transacciones/?mes=2026-06
-        mes = self.request.query_params.get('mes')
+        mes = params.get('mes')
         if mes:
             try:
-                year, month = mes.split('-')
-                qs = qs.filter(fecha__year=int(year), fecha__month=int(month))
+                anio, num = (int(x) for x in mes.split('-'))
+                inicio, fin = rango_mes(anio, num)
+                qs = qs.filter(fecha__gte=inicio, fecha__lt=fin)
             except ValueError:
                 pass
 
+        # Búsqueda por descripción o nombre de categoría: ?q=rappi
+        q = params.get('q', '').strip()
+        if q:
+            qs = qs.filter(
+                Q(nombre__icontains=q)
+                | Exists(TransaccionCategoria.objects.filter(
+                    transaccion=OuterRef('pk'), categoria__nombre__icontains=q,
+                ))
+            )
+
         return qs
+
+    def list(self, request, *args, **kwargs):
+        """
+        Sin ?limite= devuelve la lista completa (compatibilidad).
+        Con ?limite=N devuelve una página: { resultados, siguiente }.
+        `siguiente` es el cursor para ?antes=, del tipo 2026-09-22_1534.
+        """
+        qs = self.get_queryset()
+        limite = request.query_params.get('limite')
+        if limite is None:
+            return Response(self.get_serializer(qs, many=True).data)
+
+        try:
+            limite = max(1, min(int(limite), self.LIMITE_MAXIMO))
+        except ValueError:
+            limite = 50
+
+        antes = request.query_params.get('antes')
+        if antes:
+            try:
+                fecha_txt, id_txt = antes.split('_')
+                fecha = date.fromisoformat(fecha_txt)
+                qs = qs.filter(Q(fecha__lt=fecha) | Q(fecha=fecha, id__lt=int(id_txt)))
+            except ValueError:
+                return Response({'error': 'Cursor inválido.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        pagina = list(qs[:limite + 1])
+        hay_mas = len(pagina) > limite
+        pagina = pagina[:limite]
+        ultima = pagina[-1] if pagina else None
+        return Response({
+            'resultados': self.get_serializer(pagina, many=True).data,
+            'siguiente': f'{ultima.fecha.isoformat()}_{ultima.id}' if hay_mas else None,
+        })
 
     @action(detail=False, methods=['get'], url_path='resumen-mes')
     def resumen_mes(self, request):
@@ -150,145 +237,76 @@ class TransaccionViewSet(viewsets.ModelViewSet):
         Formato: { ingresos: N, gastos: N, ahorros: N }
         """
         hoy = timezone.localdate()
-
-        # Base: transacciones del mes actual del usuario
-        base = Transaccion.objects.filter(
-            fecha__year=hoy.year,
-            fecha__month=hoy.month,
-        ).filter(
-            cuenta_origen__usuario=request.user,
-        ) | Transaccion.objects.filter(
-            fecha__year=hoy.year,
-            fecha__month=hoy.month,
-        ).filter(
-            cuenta_destino__usuario=request.user,
-        )
-        base = base.distinct()
-
-        ingresos = base.filter(tipo='ingreso').aggregate(
-            total=Sum('monto')
-        )['total'] or 0
-
-        gastos = base.filter(tipo='gasto').aggregate(
-            total=Sum('monto')
-        )['total'] or 0
-
-        ahorros = base.filter(tipo='ahorro').aggregate(
-            total=Sum('monto')
-        )['total'] or 0
-
-        return Response({
-            'ingresos': ingresos,
-            'gastos': gastos,
-            'ahorros': ahorros,
-        })
+        inicio, fin = rango_mes(hoy.year, hoy.month)
+        return Response(sumas_por_tipo(Transaccion.objects.filter(
+            usuario=request.user, fecha__gte=inicio, fecha__lt=fin,
+        )))
 
     @action(detail=False, methods=['get'], url_path='analytics')
     def analytics(self, request):
         """
         Devuelve resumen, evolución mensual y gastos por categoría para el período dado.
         Param: periodo = mes | 3meses | 6meses | anio
+        Todo se agrega en la base de datos: 3 consultas sin importar cuántas transacciones haya.
         """
-        from datetime import date
-
         periodo = request.query_params.get('periodo', 'mes')
-        hoy = date.today()
-
+        hoy = timezone.localdate()
         n = {'mes': 1, '3meses': 3, '6meses': 6, 'anio': 12}.get(periodo, 1)
 
-        start_month = hoy.month - (n - 1)
-        start_year = hoy.year
-        while start_month <= 0:
-            start_month += 12
-            start_year -= 1
-        fecha_inicio = date(start_year, start_month, 1)
-
-        qs = (
-            Transaccion.objects.filter(
-                fecha__gte=fecha_inicio, fecha__lte=hoy,
-                cuenta_origen__usuario=request.user,
-            ) | Transaccion.objects.filter(
-                fecha__gte=fecha_inicio, fecha__lte=hoy,
-                cuenta_destino__usuario=request.user,
-            )
-        ).distinct().prefetch_related('transaccion_categorias__categoria')
-
-        transacciones = list(qs)
-
-        ingresos_t = sum(t.monto for t in transacciones if t.tipo == 'ingreso')
-        gastos_t   = sum(t.monto for t in transacciones if t.tipo == 'gasto')
-        ahorros_t  = sum(t.monto for t in transacciones if t.tipo == 'ahorro')
-
+        fecha_inicio = date(*restar_meses(hoy.year, hoy.month, n - 1), 1)
         # Período anterior equivalente (misma duración, inmediatamente antes)
-        import calendar
-        prev_end_month = start_month - 1
-        prev_end_year  = start_year
-        if prev_end_month <= 0:
-            prev_end_month += 12
-            prev_end_year  -= 1
-        prev_start_month = prev_end_month - (n - 1)
-        prev_start_year  = prev_end_year
-        while prev_start_month <= 0:
-            prev_start_month += 12
-            prev_start_year  -= 1
-        prev_fecha_inicio = date(prev_start_year, prev_start_month, 1)
-        prev_fecha_fin    = date(prev_end_year, prev_end_month,
-                                 calendar.monthrange(prev_end_year, prev_end_month)[1])
+        prev_inicio = date(*restar_meses(fecha_inicio.year, fecha_inicio.month, n), 1)
 
-        qs_ant = (
-            Transaccion.objects.filter(
-                fecha__gte=prev_fecha_inicio, fecha__lte=prev_fecha_fin,
-                cuenta_origen__usuario=request.user,
-            ) | Transaccion.objects.filter(
-                fecha__gte=prev_fecha_inicio, fecha__lte=prev_fecha_fin,
-                cuenta_destino__usuario=request.user,
-            )
-        ).distinct()
-        trans_ant = list(qs_ant)
-        ingresos_ant = sum(t.monto for t in trans_ant if t.tipo == 'ingreso')
-        gastos_ant   = sum(t.monto for t in trans_ant if t.tipo == 'gasto')
-        ahorros_ant  = sum(t.monto for t in trans_ant if t.tipo == 'ahorro')
+        base = Transaccion.objects.filter(usuario=request.user)
+        del_periodo = base.filter(fecha__gte=fecha_inicio, fecha__lte=hoy)
+
+        # 1) Totales por mes y tipo
+        filas = (
+            del_periodo.annotate(m=TruncMonth('fecha'))
+            .values('m', 'tipo').annotate(total=Sum('monto')).order_by()
+        )
+        por_mes = {(f['m'].year, f['m'].month, f['tipo']): f['total'] for f in filas}
 
         MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']
         mensual = []
         for i in range(n):
-            m = start_month + i
-            y = start_year
-            while m > 12:
-                m -= 12
-                y += 1
-            mes_ts = [t for t in transacciones if t.fecha.year == y and t.fecha.month == m]
+            y, m = restar_meses(hoy.year, hoy.month, n - 1 - i)
             mensual.append({
                 'mes': f'{y}-{str(m).zfill(2)}',
                 'mes_corto': MESES[m - 1],
-                'ingresos': sum(t.monto for t in mes_ts if t.tipo == 'ingreso'),
-                'gastos':   sum(t.monto for t in mes_ts if t.tipo == 'gasto'),
-                'ahorros':  sum(t.monto for t in mes_ts if t.tipo == 'ahorro'),
+                'ingresos': por_mes.get((y, m, 'ingreso'), 0),
+                'gastos':   por_mes.get((y, m, 'gasto'), 0),
+                'ahorros':  por_mes.get((y, m, 'ahorro'), 0),
             })
+        ingresos_t = sum(x['ingresos'] for x in mensual)
+        gastos_t   = sum(x['gastos'] for x in mensual)
+        ahorros_t  = sum(x['ahorros'] for x in mensual)
 
-        cat_map = {}
-        for t in transacciones:
-            if t.tipo != 'gasto':
-                continue
-            for tc in t.transaccion_categorias.all():
-                cat = tc.categoria
-                if cat.id not in cat_map:
-                    cat_map[cat.id] = {'nombre': cat.nombre, 'color': cat.color_hex, 'monto': 0}
-                cat_map[cat.id]['monto'] += t.monto
+        # 2) Período anterior
+        ant = sumas_por_tipo(base.filter(fecha__gte=prev_inicio, fecha__lt=fecha_inicio))
 
-        total_cat = sum(c['monto'] for c in cat_map.values())
-        por_categoria = sorted(
-            [
-                {
-                    'nombre': v['nombre'],
-                    'color':  v['color'],
-                    'monto':  v['monto'],
-                    'porcentaje': round(v['monto'] / total_cat * 100) if total_cat else 0,
-                }
-                for v in cat_map.values()
-            ],
-            key=lambda x: -x['monto'],
+        # 3) Gasto por categoría
+        cats = list(
+            TransaccionCategoria.objects.filter(
+                transaccion__usuario=request.user,
+                transaccion__tipo='gasto',
+                transaccion__fecha__gte=fecha_inicio,
+                transaccion__fecha__lte=hoy,
+            )
+            .values('categoria_id', 'categoria__nombre', 'categoria__color_hex')
+            .annotate(monto=Sum('transaccion__monto'))
+            .order_by('-monto')
         )
+        total_cat = sum(c['monto'] for c in cats)
+        por_categoria = [
+            {
+                'nombre': c['categoria__nombre'],
+                'color':  c['categoria__color_hex'],
+                'monto':  c['monto'],
+                'porcentaje': round(c['monto'] / total_cat * 100) if total_cat else 0,
+            }
+            for c in cats
+        ]
 
         return Response({
             'resumen': {
@@ -298,10 +316,8 @@ class TransaccionViewSet(viewsets.ModelViewSet):
                 'balance':  ingresos_t - gastos_t,
             },
             'resumen_anterior': {
-                'ingresos': ingresos_ant,
-                'gastos':   gastos_ant,
-                'ahorros':  ahorros_ant,
-                'balance':  ingresos_ant - gastos_ant,
+                **ant,
+                'balance': ant['ingresos'] - ant['gastos'],
             },
             'mensual': mensual,
             'por_categoria': por_categoria,
@@ -314,7 +330,9 @@ class TransaccionRecurrenteViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return TransaccionRecurrente.objects.filter(usuario=self.request.user)
+        return TransaccionRecurrente.objects.filter(
+            usuario=self.request.user,
+        ).select_related('cuenta_origen', 'cuenta_destino', 'categoria')
 
     @action(detail=False, methods=['post'], url_path='ejecutar')
     def ejecutar(self, request):
@@ -322,40 +340,43 @@ class TransaccionRecurrenteViewSet(viewsets.ModelViewSet):
         Revisa todas las recurrentes activas del usuario y crea transacciones
         reales para las que correspondan ejecutarse hoy.
         """
-        from datetime import date, timedelta
-        hoy = date.today()
-        recurrentes = self.get_queryset().filter(activa=True)
+        # Fecha de Colombia, no la del servidor (UTC): a las 7 p. m. el servidor ya está en "mañana"
+        hoy = timezone.localdate()
         creadas = 0
 
-        for rec in recurrentes:
+        for rec in self.get_queryset().filter(activa=True):
             if not self._es_hoy(rec, hoy):
                 continue
-
-            # Crear la transacción real
-            transaccion = Transaccion.objects.create(
-                nombre=rec.nombre,
-                monto=rec.monto,
-                tipo=rec.tipo,
-                fecha=hoy,
-                cuenta_origen=rec.cuenta_origen,
-                cuenta_destino=rec.cuenta_destino,
-                notas=f'Auto-registrada desde recurrente: {rec.nombre}',
-            )
-            if rec.categoria:
-                TransaccionCategoria.objects.create(
-                    transaccion=transaccion,
-                    categoria=rec.categoria,
-                )
-
-            rec.ultima_ejecucion = hoy
-            rec.save(update_fields=['ultima_ejecucion'])
+            try:
+                # La restricción única (recurrente, fecha) impide duplicados si la app
+                # se abre en dos dispositivos al mismo tiempo.
+                with db_transaction.atomic():
+                    transaccion = Transaccion.objects.create(
+                        usuario=request.user,
+                        recurrente=rec,
+                        nombre=rec.nombre,
+                        monto=rec.monto,
+                        tipo=rec.tipo,
+                        fecha=hoy,
+                        cuenta_origen=rec.cuenta_origen,
+                        cuenta_destino=rec.cuenta_destino,
+                        notas=f'Auto-registrada desde recurrente: {rec.nombre}',
+                    )
+                    if rec.categoria_id:
+                        TransaccionCategoria.objects.create(
+                            transaccion=transaccion,
+                            categoria_id=rec.categoria_id,
+                        )
+                    rec.ultima_ejecucion = hoy
+                    rec.save(update_fields=['ultima_ejecucion'])
+            except IntegrityError:
+                continue
             creadas += 1
 
         return Response({'creadas': creadas})
 
     def _es_hoy(self, rec, hoy):
         """Determina si la recurrente debe ejecutarse hoy."""
-        from datetime import timedelta
         ult = rec.ultima_ejecucion
 
         if rec.frecuencia == 'diaria':
@@ -442,8 +463,8 @@ class CambiarPasswordView(APIView):
 
         if not request.user.check_password(current):
             return Response({'error': 'La contraseña actual es incorrecta.'}, status=status.HTTP_400_BAD_REQUEST)
-        if len(nueva) < 4:
-            return Response({'error': 'La nueva contraseña debe tener al menos 4 caracteres.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(nueva) < MIN_PASSWORD:
+            return Response({'error': f'La nueva contraseña debe tener al menos {MIN_PASSWORD} caracteres.'}, status=status.HTTP_400_BAD_REQUEST)
 
         request.user.set_password(nueva)
         request.user.save()

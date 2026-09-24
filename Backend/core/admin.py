@@ -37,8 +37,9 @@ class TransaccionCategoriaInline(admin.TabularInline):
 
 @admin.register(Transaccion)
 class TransaccionAdmin(admin.ModelAdmin):
-    list_display = ['nombre', 'monto', 'fecha', 'tipo', 'cuenta_origen', 'cuenta_destino']
-    list_filter = ['tipo', 'fecha']
+    list_display = ['nombre', 'usuario', 'monto', 'fecha', 'tipo', 'cuenta_origen', 'cuenta_destino']
+    list_filter = ['tipo', 'fecha', 'usuario']
+    list_select_related = ['usuario', 'cuenta_origen', 'cuenta_destino']
     search_fields = ['nombre', 'notas']
     inlines = [TransaccionCategoriaInline]
     readonly_fields = ['creada_en', 'actualizada_en']

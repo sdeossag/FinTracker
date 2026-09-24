@@ -22,6 +22,40 @@ class WebAuthnAuthResponseSerializer(serializers.Serializer):
 
 
 
+class SoloDelUsuarioMixin:
+    """
+    Limita los campos relacionados a objetos del usuario autenticado.
+    Sin esto, cualquiera podía enviar el id de una cuenta ajena.
+    """
+    campos_cuenta = ('cuenta_origen', 'cuenta_destino')
+
+    def get_fields(self):
+        fields = super().get_fields()
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        autenticado = bool(user and user.is_authenticated)
+        for nombre in self.campos_cuenta:
+            if nombre in fields:
+                fields[nombre].queryset = (
+                    Cuenta.objects.filter(usuario=user) if autenticado else Cuenta.objects.none()
+                )
+        if 'categoria' in fields:
+            fields['categoria'].queryset = (
+                Categoria.objects.filter(usuario=user) if autenticado else Categoria.objects.none()
+            )
+        return fields
+
+
+def asignar_categorias(transaccion, categorias_ids, usuario):
+    """Reemplaza las categorías de una transacción con 2 consultas en total."""
+    ids = set(
+        Categoria.objects.filter(id__in=categorias_ids, usuario=usuario).values_list('id', flat=True)
+    )
+    TransaccionCategoria.objects.bulk_create([
+        TransaccionCategoria(transaccion=transaccion, categoria_id=cat_id) for cat_id in ids
+    ])
+
+
 class CuentaSerializer(serializers.ModelSerializer):
     # Campo calculado — solo lectura
     balance_actual = serializers.ReadOnlyField()
@@ -64,7 +98,7 @@ class TransaccionCategoriaSerializer(serializers.ModelSerializer):
         fields = ['id', 'nombre', 'color_hex']
 
 
-class TransaccionSerializer(serializers.ModelSerializer):
+class TransaccionSerializer(SoloDelUsuarioMixin, serializers.ModelSerializer):
     # Categorías anidadas — lectura
     categorias = TransaccionCategoriaSerializer(
         source='transaccion_categorias',
@@ -82,10 +116,12 @@ class TransaccionSerializer(serializers.ModelSerializer):
     cuenta_origen_nombre = serializers.CharField(
         source='cuenta_origen.nombre',
         read_only=True,
+        default=None,
     )
     cuenta_destino_nombre = serializers.CharField(
         source='cuenta_destino.nombre',
         read_only=True,
+        default=None,
     )
 
     class Meta:
@@ -114,22 +150,9 @@ class TransaccionSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         categorias_ids = validated_data.pop('categorias_ids', [])
-        transaccion = Transaccion.objects.create(**validated_data)
-
-        # Crear relaciones many-to-many con categorías
-        for cat_id in categorias_ids:
-            try:
-                categoria = Categoria.objects.get(
-                    id=cat_id,
-                    usuario=self.context['request'].user
-                )
-                TransaccionCategoria.objects.create(
-                    transaccion=transaccion,
-                    categoria=categoria,
-                )
-            except Categoria.DoesNotExist:
-                pass
-
+        usuario = self.context['request'].user
+        transaccion = Transaccion.objects.create(usuario=usuario, **validated_data)
+        asignar_categorias(transaccion, categorias_ids, usuario)
         return transaccion
 
     def update(self, instance, validated_data):
@@ -141,23 +164,12 @@ class TransaccionSerializer(serializers.ModelSerializer):
         # Actualizar categorías si se enviaron
         if categorias_ids is not None:
             instance.transaccion_categorias.all().delete()
-            for cat_id in categorias_ids:
-                try:
-                    categoria = Categoria.objects.get(
-                        id=cat_id,
-                        usuario=self.context['request'].user
-                    )
-                    TransaccionCategoria.objects.create(
-                        transaccion=instance,
-                        categoria=categoria,
-                    )
-                except Categoria.DoesNotExist:
-                    pass
+            asignar_categorias(instance, categorias_ids, self.context['request'].user)
 
         return instance
 
 
-class TransaccionRecurrenteSerializer(serializers.ModelSerializer):
+class TransaccionRecurrenteSerializer(SoloDelUsuarioMixin, serializers.ModelSerializer):
     cuenta_origen_nombre = serializers.CharField(source='cuenta_origen.nombre', read_only=True, default=None)
     cuenta_destino_nombre = serializers.CharField(source='cuenta_destino.nombre', read_only=True, default=None)
     categoria_nombre = serializers.CharField(source='categoria.nombre', read_only=True, default=None)

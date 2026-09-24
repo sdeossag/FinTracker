@@ -111,7 +111,7 @@ export default function Configuracion() {
   const cambiarPassword = async () => {
     setPassError('')
     if (!passForm.current) { setPassError('Escribe tu contraseña actual.'); return }
-    if (passForm.nueva.length < 4) { setPassError('La nueva contraseña debe tener al menos 4 caracteres.'); return }
+    if (passForm.nueva.length < 8) { setPassError('La nueva contraseña debe tener al menos 8 caracteres.'); return }
     if (passForm.nueva !== passForm.confirmar) { setPassError('Las contraseñas nuevas no coinciden.'); return }
 
     setGuardandoPass(true)
@@ -269,7 +269,7 @@ export default function Configuracion() {
         </div>
         <div className="campo">
           <label className="label" htmlFor="pass-nueva">Nueva contraseña</label>
-          <input id="pass-nueva" className="input" type="password" autoComplete="new-password" placeholder="Mínimo 4 caracteres"
+          <input id="pass-nueva" className="input" type="password" autoComplete="new-password" placeholder="Mínimo 8 caracteres"
             value={passForm.nueva} onChange={e => setPassForm(p => ({ ...p, nueva: e.target.value }))} />
         </div>
         <div className="campo">

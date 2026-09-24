@@ -15,7 +15,7 @@ export default function Registro() {
   const set = (campo) => (e) => setForm({ ...form, [campo]: e.target.value })
 
   // Validación en línea, no solo al enviar
-  const passCorta = form.password.length > 0 && form.password.length < 4
+  const passCorta = form.password.length > 0 && form.password.length < 8
   const noCoinciden = form.confirm_password.length > 0 && form.password !== form.confirm_password
 
   const handleSubmit = async (e) => {
@@ -116,7 +116,7 @@ export default function Registro() {
               id="reg-pass"
               className="input"
               type="password"
-              placeholder="Mínimo 4 caracteres"
+              placeholder="Mínimo 8 caracteres"
               autoComplete="new-password"
               enterKeyHint="next"
               value={form.password}
@@ -126,7 +126,7 @@ export default function Registro() {
               required
             />
             <p id="reg-pass-ayuda" className={passCorta ? 'campo-error' : 'campo-ayuda'}>
-              Usa al menos 4 caracteres.
+              Usa al menos 8 caracteres.
             </p>
           </div>
 
@@ -153,7 +153,7 @@ export default function Registro() {
           <button
             type="submit"
             className="btn-primario"
-            disabled={cargando || !form.username.trim() || form.password.length < 4 || noCoinciden || !form.confirm_password}
+            disabled={cargando || !form.username.trim() || form.password.length < 8 || noCoinciden || !form.confirm_password}
             style={{ marginTop: 8 }}
           >
             {cargando ? 'Creando cuenta…' : 'Crear cuenta'}
