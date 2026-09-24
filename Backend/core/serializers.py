@@ -75,6 +75,7 @@ class CuentaSerializer(serializers.ModelSerializer):
             'id', 'nombre', 'tipo', 'balance_inicial',
             'balance_actual', 'color_hex', 'activa', 'creada_en',
             'cupo', 'dia_corte', 'dia_pago', 'estado_tarjeta', 'terminaciones',
+            'incluir_en_disponible',
         ]
         read_only_fields = ['creada_en']
         extra_kwargs = {

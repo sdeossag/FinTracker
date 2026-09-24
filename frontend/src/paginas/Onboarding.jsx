@@ -6,6 +6,8 @@ import Icono from '../componentes/Icono'
 import Marca from '../componentes/Marca'
 import { AvisoError, CampoMonto, SelectorColor } from '../componentes/Controles'
 import { capitalizar } from '../utils/formato'
+import { irArriba } from '../utils/scroll'
+import { marcarNovedadesVistas } from '../utils/novedades'
 
 const COLORES = ['#0A84FF', '#30D158', '#FF453A', '#FFD60A', '#BF5AF2', '#FF9F0A', '#5AC8FA', '#FF375F']
 
@@ -339,7 +341,7 @@ export default function Onboarding() {
   const irA = (n) => {
     setDireccion(n > paso ? 1 : -1)
     setPaso(Math.max(0, Math.min(n, TOTAL_PASOS - 1)))
-    window.scrollTo({ top: 0 })
+    irArriba()
   }
   const siguiente = () => irA(paso + 1)
   // Si quedan pasos de configuración, saltar al tour; si está en el tour, a listo
@@ -347,6 +349,7 @@ export default function Onboarding() {
 
   const terminar = () => {
     localStorage.setItem('ft_ob_done', 'true')
+    marcarNovedadesVistas()   // cuenta nueva: para ella todo es nuevo
     navigate('/')
   }
 

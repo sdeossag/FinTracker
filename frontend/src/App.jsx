@@ -1,4 +1,4 @@
-import { useLayoutEffect } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigationType } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import './index.css'
@@ -20,21 +20,49 @@ import ProtectedRoute from './componentes/ProtectedRoute'
 import Configuracion from './paginas/Configuracion'
 import Graficas from './paginas/Graficas'
 import Icono from './componentes/Icono'
+import { irArriba } from './utils/scroll'
+import Novedades from './componentes/Novedades'
+import { getAccessToken } from './api'
 
 // Pantallas enfocadas en una tarea: sin barra de pestañas
 const SIN_NAV = ['/login', '/registro', '/biometria', '/onboarding', '/nueva', '/editar']
+// Donde no se muestran las novedades: sin sesión o configurando la cuenta
+const SIN_NOVEDADES = ['/login', '/registro', '/onboarding']
+
+// Teclado abierto (solo pantallas táctiles): la barra de pestañas se esconde
+// para no quedar flotando encima del teclado
+function useTecladoAbierto() {
+  const [abierto, setAbierto] = useState(false)
+  useEffect(() => {
+    if (!window.matchMedia('(pointer: coarse)').matches) return
+    const esCampo = (el) =>
+      el?.matches?.('textarea, input:not([type=button]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color])')
+    let t
+    const onIn  = (e) => { if (esCampo(e.target)) { clearTimeout(t); setAbierto(true) } }
+    const onOut = (e) => { if (esCampo(e.target)) { t = setTimeout(() => setAbierto(esCampo(document.activeElement)), 80) } }
+    document.addEventListener('focusin', onIn)
+    document.addEventListener('focusout', onOut)
+    return () => { document.removeEventListener('focusin', onIn); document.removeEventListener('focusout', onOut) }
+  }, [])
+  return abierto
+}
 
 function AppContent() {
   const location = useLocation()
   const tipoNavegacion = useNavigationType()
   // Una pantalla nueva arranca arriba; al volver atrás se respeta donde estaba
   useLayoutEffect(() => {
-    if (tipoNavegacion !== 'POP') window.scrollTo(0, 0)
+    if (tipoNavegacion !== 'POP') irArriba()
   }, [location.key, tipoNavegacion])
   const sinNav = SIN_NAV.some(r => location.pathname === r || location.pathname.startsWith(r + '/'))
 
+  const tecladoAbierto = useTecladoAbierto()
+
   return (
-    <>
+    // Fijo a los cuatro bordes: el documento nunca hace scroll, lo hace <main>.
+    // Así la barra de pestañas no se descuadra con el rebote ni con el teclado (como NutriFit).
+    <div id="app-shell">
+      <main id="scroller">
       <Routes>
         {/* Rutas públicas */}
         <Route path="/login" element={<Login />} />
@@ -58,8 +86,10 @@ function AppContent() {
 
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
-      {!sinNav && <NavBar />}
-    </>
+      </main>
+      {!sinNav && <NavBar oculta={tecladoAbierto} />}
+      {getAccessToken() && !SIN_NOVEDADES.includes(location.pathname) && <Novedades />}
+    </div>
   )
 }
 

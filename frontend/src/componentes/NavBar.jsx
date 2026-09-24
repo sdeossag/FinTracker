@@ -1,24 +1,21 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+// Barra de pestañas flotante (misma física que la de NutriFit, según apple-design).
+//
+// La selección es un lente. Todo lo que se mueve lo hace con resortes que parten
+// del valor en pantalla, así cualquier movimiento se puede agarrar y redirigir (§3):
+//   - Al tocar, el lente crece y viaja a la pestaña bajo el dedo antes de soltar (§1).
+//   - Se arrastra 1:1 respetando dónde se agarró (§2), con resistencia en los bordes (§9).
+//   - Al soltar hereda la velocidad del dedo (§5) y cae donde apuntaba el gesto (§6),
+//     como mucho una pestaña más allá.
+//   - Se estira en la dirección del movimiento según la velocidad (§8, §11).
+//   - Pinta de azul exactamente lo que cubre y agranda los íconos cerca del dedo.
+//   - Arrastrar lejos de la barra y soltar cancela el cambio (§10).
+// El botón central "Nueva" no es una pestaña: el lente lo cruza, y soltar encima lo abre.
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { animate, motion, useMotionValue, useReducedMotion } from 'motion/react'
+import {
+  haptic, prefersReducedMotion, project, rubberband, spring, trackPointer, velocityFrom,
+} from '../utils/movimiento'
 import './NavBar.css'
-
-const INFLUENCIA = 110   // radio del efecto dock (px)
-const ESCALA_MAX = 1.14
-const PILL_W     = 64
-const HISTERESIS = 10    // px antes de convertir un toque en arrastre
-
-// La píldora se mueve con resortes: interrumpibles y heredan la velocidad actual
-const SEGUIR  = { type: 'spring', bounce: 0, visualDuration: 0.18 }  // seguir el dedo / el mouse
-const REPOSO  = { type: 'spring', bounce: 0, visualDuration: 0.34 }  // ir a la pestaña activa
-const SOLTAR  = { type: 'spring', bounce: 0.2, visualDuration: 0.34 } // viene de un gesto con momentum
-
-const COLOR_ACTIVO   = '#0A84FF'
-const COLOR_INACTIVO = 'rgba(255,255,255,0.4)'
-
-// Proyección de momentum de Apple; 0.99 = desaceleración rápida (selector corto)
-const proyectar = (v, d = 0.99) => (v / 1000) * d / (1 - d)
-const rubberband = (x, dim, c = 0.55) => (x * dim * c) / (dim + c * Math.abs(x))
 
 /* ── Iconos ─────────────────────────────────────────── */
 const IconoInicio = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
@@ -39,12 +36,14 @@ const IconoMas = () => (
 /* ── Items ──────────────────────────────────────────── */
 // "relacionadas": pantallas a las que se llega desde esa pestaña (wayfinding)
 const ITEMS = [
-  { id: 'inicio',    path: '/',              label: 'Inicio',   Icon: IconoInicio,    relacionadas: ['/configuracion', '/revisar'] },
+  { id: 'inicio',    path: '/',              label: 'Inicio',    Icon: IconoInicio,    relacionadas: ['/configuracion', '/revisar'] },
   { id: 'historial', path: '/transacciones', label: 'Historial', Icon: IconoHistorial, relacionadas: ['/recurrentes', '/editar'] },
-  { id: 'nueva',     path: '/nueva',         label: 'Nueva',    isFab: true },
-  { id: 'cuentas',   path: '/cuentas',       label: 'Cuentas',  Icon: IconoCuentas,   relacionadas: [] },
-  { id: 'graficas',  path: '/graficas',      label: 'Gráficas', Icon: IconoGraficas,  relacionadas: ['/presupuesto'] },
+  { id: 'nueva',     path: '/nueva',         label: 'Nueva',     isFab: true },
+  { id: 'cuentas',   path: '/cuentas',       label: 'Cuentas',   Icon: IconoCuentas,   relacionadas: [] },
+  { id: 'graficas',  path: '/graficas',      label: 'Gráficas',  Icon: IconoGraficas,  relacionadas: ['/presupuesto'] },
 ]
+const TABS = ITEMS.map((it, i) => (it.isFab ? -1 : i)).filter(i => i >= 0)
+const FAB = ITEMS.findIndex(it => it.isFab)
 
 const coincide = (item, ruta) => {
   if (item.isFab) return false
@@ -52,246 +51,354 @@ const coincide = (item, ruta) => {
   return item.path === '/' ? ruta === '/' : ruta.startsWith(item.path)
 }
 
-/* ── Componente ─────────────────────────────────────── */
-export default function NavBar() {
+const DRAG_THRESHOLD  = 10     // histéresis antes de tratarlo como arrastre (§10)
+const CANCEL_DISTANCE = 80     // px por encima de la barra para cancelar al soltar
+const INSET           = 4
+const LIFT_SCALE      = 0.1    // el lente crece 10% mientras se toca
+const MAX_MAGNIFY     = 0.14   // un ícono bajo el dedo crece hasta 14%
+const MAX_STRETCH     = 0.14   // estiramiento máximo por velocidad
+const STRETCH_SPEED   = 3200   // px/s para llegar al estiramiento máximo
+
+// Resortes (response en segundos, damping 1 = sin rebote)
+const SP_MOVE   = { response: 0.36, damping: 1 }
+const SP_CATCH  = { response: 0.18, damping: 1 }
+const SP_LIFT   = { response: 0.24, damping: 1 }
+const SP_SETTLE = { response: 0.34, damping: 1 }
+const SP_MAG_IN = { response: 0.16, damping: 1 }
+
+const smoothstep = (t) => t * t * (3 - 2 * t)
+const clamp01 = (v) => Math.max(0, Math.min(1, v))
+
+function Contenido({ item }) {
+  const { Icon } = item
+  return (
+    <>
+      <Icon />
+      <span className="nav-label">{item.label}</span>
+    </>
+  )
+}
+
+export default function NavBar({ oculta = false }) {
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  const reducir = useReducedMotion()
 
   const navRef  = useRef(null)
-  const btnRefs = useRef([])
-  const pillX   = useMotionValue(0)          // borde izquierdo de la píldora, relativo al nav
-  const destino = useRef(null)
-  const gesto   = useRef(null)               // arrastre táctil en curso
-  const hover   = useRef(false)              // mouse sobre la barra
-  const suprimirClick = useRef(false)
   const pillRef = useRef(null)
-  const lista   = useRef(false)              // ya se colocó la píldora por primera vez
-  const [arrastrando, setArrastrando] = useState(false)
+  const btnRefs = useRef([])
+  const litRefs = useRef([])
+  const geo     = useRef({ lefts: [], widths: [], width: 0 })
+
+  // Valores en pantalla (presentation values) y sus resortes
+  const x       = useRef(null)
+  const lift    = useRef(0)
+  const stretch = useRef(0)
+  const mag     = useRef(ITEMS.map(() => 0))
+  const anims   = useRef({ x: null, lift: null, stretch: null, mag: [] })
+
+  const gesture      = useRef(null)
+  const hovering     = useRef(false)
+  const fromDrag     = useRef(false)
+  const lastHover    = useRef(-1)
+  const pendiente    = useRef(false)
+  const stretchTimer = useRef(0)
 
   const activoIdx = ITEMS.findIndex(it => coincide(it, pathname))
+  const activeRef = useRef(activoIdx)
+  useLayoutEffect(() => { activeRef.current = activoIdx }, [activoIdx])
 
   const ir = (path) => { if (pathname !== path) navigate(path) }
 
-  const centro = (i) => {
-    const nav = navRef.current
-    const btn = btnRefs.current[i]
-    if (!nav || !btn) return 0
-    const n = nav.getBoundingClientRect()
-    const b = btn.getBoundingClientRect()
-    return b.left - n.left + b.width / 2
+  // ── Geometría (cacheada: no se lee layout en cada frame) ──
+  const medir = () => {
+    const btns = btnRefs.current
+    geo.current = {
+      lefts:  btns.map(b => b?.offsetLeft ?? 0),
+      widths: btns.map(b => b?.offsetWidth ?? 0),
+      width:  navRef.current?.offsetWidth ?? 0,
+    }
   }
-
-  const moverPill = (cx, resorte = REPOSO, inmediato = false) => {
-    const x = cx - PILL_W / 2
-    destino.current = x
-    if (inmediato || reducir) pillX.jump(x)
-    else animate(pillX, x, resorte)
+  const centro    = (i) => geo.current.lefts[i] + geo.current.widths[i] / 2
+  const pillWidth = () => (geo.current.widths[TABS[0]] ?? 64) - INSET * 2
+  // Posición dentro de TABS de la pestaña más cercana (el botón central no cuenta)
+  const nearestPos = (cx) => {
+    let best = 0
+    TABS.forEach((i, p) => { if (Math.abs(centro(i) - cx) < Math.abs(centro(TABS[best]) - cx)) best = p })
+    return best
   }
+  const nearest = (cx) => TABS[nearestPos(cx)]
+  const reposo = () => (activeRef.current >= 0 ? centro(activeRef.current) : null)
 
-  /* ── Revelado del icono/label bajo la píldora ────── */
-  const revelar = useCallback(() => {
-    const nav = navRef.current
-    if (!nav) return
-    const n = nav.getBoundingClientRect()
-    const izq = pillX.get()
-    const der = izq + PILL_W
-    ITEMS.forEach((item, i) => {
-      if (item.isFab) return
-      const btn = btnRefs.current[i]
+  // ── Render: compone todos los valores en un solo frame ──
+  const render = () => {
+    pendiente.current = false
+    const pill = pillRef.current
+    if (!pill || x.current == null) return
+    const w  = pillWidth()
+    const cx = x.current
+    const s  = 1 + LIFT_SCALE * lift.current
+    const st = stretch.current
+    // Sin pestaña activa (p. ej. en una pantalla sin equivalente) el lente solo aparece al tocar
+    const visible = activeRef.current >= 0 || gesture.current || hovering.current
+    pill.style.opacity = visible ? '1' : '0'
+    pill.style.width = `${w}px`
+    pill.style.transform =
+      `translate3d(${(cx - w / 2).toFixed(2)}px, 0, 0) scale(${(s * (1 + st)).toFixed(4)}, ${(s * (1 - st * 0.5)).toFixed(4)})`
+
+    // Transferencia de color: el azul aparece solo donde el lente cubre cada pestaña
+    const half = (w * s * (1 + st)) / 2
+    const pL = visible ? cx - half : 0
+    const pR = visible ? cx + half : 0
+    const { lefts, widths } = geo.current
+    litRefs.current.forEach((lit, i) => {
+      if (!lit) return
+      const bL = lefts[i], bW = widths[i] || 1, bR = bL + bW
+      const oL = Math.max(pL, bL), oR = Math.min(pR, bR)
+      lit.style.clipPath = oR <= oL
+        ? 'inset(0 100% 0 0)'
+        : `inset(0 ${(((bR - oR) / bW) * 100).toFixed(2)}% 0 ${(((oL - bL) / bW) * 100).toFixed(2)}%)`
+    })
+
+    // Lupa: los íconos cerca del dedo crecen
+    btnRefs.current.forEach((btn, i) => {
       if (!btn) return
-      const fill = btn.querySelector('[data-icon-fill]')
-      const label = btn.querySelector('[data-label]')
-      const solape = (el) => {
-        const r = el.getBoundingClientRect()
-        const l = r.left - n.left
-        const rr = l + r.width
-        const oL = Math.max(izq, l)
-        const oR = Math.min(der, rr)
-        return oR <= oL ? null : { l: (oL - l) / r.width, r: (rr - oR) / r.width }
-      }
-      if (fill) {
-        const s = solape(fill)
-        fill.style.clipPath = s
-          ? `inset(0 ${(s.r * 100).toFixed(2)}% 0 ${(s.l * 100).toFixed(2)}%)`
-          : 'inset(0 0 0 100%)'
-      }
-      if (label) {
-        const s = solape(label)
-        label.style.color = s && 1 - s.l - s.r > 0.35 ? COLOR_ACTIVO : COLOR_INACTIVO
+      const t = mag.current[i]
+      btn.style.transform = t > 0.001
+        ? `translateY(${(-3 * t).toFixed(2)}px) scale(${(1 + MAX_MAGNIFY * t).toFixed(4)})`
+        : ''
+    })
+  }
+  // Se dibuja en la misma tarea (microtarea), no en el siguiente frame: cero latencia (§1)
+  const schedule = () => {
+    if (pendiente.current) return
+    pendiente.current = true
+    queueMicrotask(render)
+  }
+
+  // ── Resortes que parten del valor actual (y heredan su velocidad) ──
+  const animar = (key, ref, target, cfg, { velocity, idx } = {}) => {
+    const actual = idx == null ? anims.current[key] : anims.current.mag[idx]
+    const from = idx == null ? ref.current : ref.current[idx]
+    const v = velocity ?? actual?.velocity ?? 0
+    actual?.stop()
+    const a = spring({
+      from: from ?? target, to: target, velocity: v,
+      response: cfg.response, damping: cfg.damping,
+      restDelta: key === 'x' ? 0.3 : 0.001,
+      onUpdate: (val) => {
+        if (idx == null) ref.current = val; else ref.current[idx] = val
+        schedule()
+      },
+      onComplete: () => {
+        if (idx == null) anims.current[key] = null; else anims.current.mag[idx] = null
+      },
+    })
+    const vivo = prefersReducedMotion() ? null : a
+    if (idx == null) anims.current[key] = vivo; else anims.current.mag[idx] = vivo
+  }
+
+  const moverA = (target, cfg = SP_MOVE, velocity) => {
+    if (target == null) { schedule(); return }
+    animar('x', x, target, cfg, { velocity })
+  }
+  const levantar = (on) => {
+    animar('lift', lift, on ? 1 : 0, on ? SP_LIFT : SP_SETTLE)
+    if (pillRef.current) pillRef.current.dataset.lifted = on ? 'true' : 'false'
+  }
+  const estirar = (v) => {
+    if (prefersReducedMotion()) return
+    const objetivo = Math.min(Math.abs(v) / STRETCH_SPEED, 1) * MAX_STRETCH
+    animar('stretch', stretch, objetivo, SP_MAG_IN)
+    // Si el dedo se detiene no llegan más eventos: el lente recupera su forma
+    clearTimeout(stretchTimer.current)
+    stretchTimer.current = setTimeout(() => animar('stretch', stretch, 0, SP_SETTLE), 70)
+  }
+  const magnify = (px) => {
+    const reducir = prefersReducedMotion()
+    const { lefts, widths } = geo.current
+    const radio = (widths[TABS[0]] || 64) * 1.6
+    ITEMS.forEach((_, i) => {
+      const t = px == null || reducir ? 0 : smoothstep(clamp01(1 - Math.abs(px - (lefts[i] + widths[i] / 2)) / radio))
+      animar('mag', mag, t, px == null ? SP_SETTLE : SP_MAG_IN, { idx: i })
+    })
+  }
+  const detenerX = () => { anims.current.x?.stop(); anims.current.x = null }
+
+  // ── Posición inicial y cambios de tamaño: sin animación ──
+  useLayoutEffect(() => {
+    medir()
+    x.current = reposo() ?? centro(TABS[0])
+    render()
+    const ro = new ResizeObserver(() => {
+      medir()
+      if (!gesture.current && !anims.current.x && !hovering.current) {
+        x.current = reposo() ?? x.current
+        schedule()
       }
     })
-  }, [pillX])
+    ro.observe(navRef.current)
+    return () => {
+      ro.disconnect()
+      clearTimeout(stretchTimer.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  useEffect(() => pillX.on('change', revelar), [pillX, revelar])
-
-  /* ── Colocar la píldora en la pestaña activa ─────── */
-  useLayoutEffect(() => {
-    const pill = pillRef.current
-    if (activoIdx < 0) { if (pill) pill.style.opacity = '0'; return }
-    if (gesto.current?.activo || hover.current) return
-    const x = centro(activoIdx) - PILL_W / 2
-    if (pill) pill.style.opacity = '1'
-    if (lista.current && destino.current != null && Math.abs(destino.current - x) < 0.5) return
-    moverPill(x + PILL_W / 2, REPOSO, !lista.current)
-    lista.current = true
-    revelar()
-  }, [pathname])
-
+  // Cambio de pantalla por toque, teclado o código: el lente viaja con resorte
   useEffect(() => {
-    const onResize = () => { if (activoIdx >= 0) moverPill(centro(activoIdx), REPOSO, true) }
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
+    if (fromDrag.current) { fromDrag.current = false; return }
+    if (x.current == null || hovering.current || gesture.current) return
+    moverA(reposo())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activoIdx])
 
-  /* ── Efecto dock (escala según la distancia) ─────── */
-  const magnificar = (x, y) => {
-    const nav = navRef.current
-    if (!nav) return null
-    const n = nav.getBoundingClientRect()
-    const lx = x - n.left
-    const ly = y - n.top
-    let total = 0
-    let pond = 0
-    ITEMS.forEach((item, i) => {
-      const btn = btnRefs.current[i]
-      if (!btn) return
-      const cx = centro(i)
-      const d = Math.hypot(lx - cx, ly - n.height / 2)
-      const t = Math.max(0, 1 - d / INFLUENCIA)
-      const e = t * t * (3 - 2 * t)
-      if (!reducir) {
-        btn.style.transform = `scale(${(1 + (ESCALA_MAX - 1) * e).toFixed(3)}) translateY(${(-e * 2).toFixed(2)}px)`
-        if (item.isFab) {
-          const fab = btn.querySelector('[data-fab]')
-          if (fab) fab.style.boxShadow = `0 ${(3 + e * 4).toFixed(1)}px ${(12 + e * 10).toFixed(1)}px rgba(10,132,255,${(0.38 + e * 0.28).toFixed(2)})`
-        }
-      }
-      if (!item.isFab && e > 0) { total += e; pond += cx * e }
-    })
-    return total > 0 ? pond / total : null
+  const objetivoDesde = (clientX, left, grab = 0) => {
+    const min = centro(TABS[0]), max = centro(TABS[TABS.length - 1])
+    let t = clientX - left - grab
+    if (t < min) t = min - rubberband(min - t, geo.current.width)
+    if (t > max) t = max + rubberband(t - max, geo.current.width)
+    return t
   }
 
-  const restaurar = () => {
-    ITEMS.forEach((item, i) => {
-      const btn = btnRefs.current[i]
-      if (!btn) return
-      btn.style.transform = ''
-      if (item.isFab) {
-        const fab = btn.querySelector('[data-fab]')
-        if (fab) fab.style.boxShadow = ''
-      }
-    })
-    setArrastrando(false)
+  // Tick háptico al cruzar a otra pestaña mientras se arrastra (§13)
+  const tickSiCambia = (cx) => {
+    const i = nearest(cx)
+    if (i !== lastHover.current) {
+      if (lastHover.current !== -1) haptic(4)
+      lastHover.current = i
+    }
   }
 
-  /* ── Pointer Events: mouse (hover) y táctil (arrastre) ── */
+  // ── Toque / clic presionado ──
   const onPointerDown = (e) => {
-    if (e.pointerType === 'mouse' || (gesto.current && !e.isPrimary)) return
-    gesto.current = { id: e.pointerId, x0: e.clientX, y0: e.clientY, activo: false, muestras: [] }
+    if (e.button !== 0 || gesture.current) return
+    // El botón central es un botón normal: solo su propio clic
+    if (e.target.closest?.('.nav-fab-wrapper')) return
+    medir()
+    const rect = navRef.current.getBoundingClientRect()
+    const px = e.clientX - rect.left
+    const onPill = activeRef.current >= 0 && Math.abs(px - x.current) < pillWidth() / 2
+    gesture.current = {
+      left: rect.left, top: rect.top, startX: e.clientX, startY: e.clientY,
+      grab: onPill ? px - x.current : 0,
+      catching: !onPill,
+      dragging: false,
+      samples: [{ x: e.clientX, t: e.timeStamp }],
+    }
+    lastHover.current = nearest(px)
+    // §1: responde al presionar — el lente crece y va hacia la pestaña tocada
+    levantar(true)
+    if (!onPill) moverA(centro(nearest(px)), SP_CATCH)
+    trackPointer(e, { onMove, onEnd })
   }
 
-  const onPointerMove = (e) => {
-    if (e.pointerType === 'mouse') {
-      if (e.buttons) return
-      hover.current = true
-      if (!arrastrando) setArrastrando(true)
-      const cx = magnificar(e.clientX, e.clientY)
-      if (cx != null) moverPill(cx, SEGUIR)
+  const onMove = (e) => {
+    const g = gesture.current
+    if (!g) return false
+    if (!g.dragging) {
+      if (Math.hypot(e.clientX - g.startX, e.clientY - g.startY) < DRAG_THRESHOLD) return false
+      g.dragging = true
+    }
+    g.samples.push({ x: e.clientX, t: e.timeStamp })
+    if (g.samples.length > 8) g.samples.shift()
+
+    // Lejos de la barra: el lente se relaja para anunciar que soltar cancela
+    const lejos = g.top - e.clientY > CANCEL_DISTANCE
+    if (lejos !== !!g.lejos) { g.lejos = lejos; levantar(!lejos) }
+
+    const target = objetivoDesde(e.clientX, g.left, g.grab)
+    magnify(lejos ? null : e.clientX - g.left)
+    estirar(velocityFrom(g.samples))
+    tickSiCambia(target)
+
+    if (g.catching) {
+      // Se agarró fuera del lente: lo alcanza con resorte y luego lo sigue 1:1
+      moverA(target, SP_CATCH)
+      if (Math.abs(x.current - target) < 2) { g.catching = false; detenerX() }
+    } else {
+      detenerX()
+      x.current = target
+      schedule()
+    }
+    return true
+  }
+
+  const onEnd = (e) => {
+    const g = gesture.current
+    gesture.current = null
+    if (!g) return
+    if (!hovering.current) { levantar(false); magnify(null) }
+
+    if (!g.dragging) {
+      // Toque simple: el click confirma el cambio. Si se tocó la pestaña activa
+      // (o el toque se canceló), el lente vuelve a su sitio.
+      const tocada = nearest(g.startX - g.left)
+      if (tocada === activeRef.current || e.type === 'pointercancel') moverA(reposo())
       return
     }
-    const g = gesto.current
-    if (!g || g.id !== e.pointerId) return
-    if (!g.activo) {
-      if (Math.abs(e.clientX - g.x0) < HISTERESIS && Math.abs(e.clientY - g.y0) < HISTERESIS) return
-      g.activo = true
-      navRef.current.setPointerCapture(e.pointerId)   // el arrastre sigue aunque salga de la barra
-      setArrastrando(true)
-    }
-    g.muestras.push({ t: e.timeStamp, x: e.clientX })
-    while (g.muestras.length > 2 && e.timeStamp - g.muestras[0].t > 100) g.muestras.shift()
 
-    // La píldora va bajo el dedo, con resistencia más allá de la primera/última pestaña
-    const n = navRef.current.getBoundingClientRect()
-    const primero = centro(0)
-    const ultimo = centro(ITEMS.length - 1)
-    let cx = e.clientX - n.left
-    if (cx < primero) cx = primero + rubberband(cx - primero, n.width)
-    if (cx > ultimo) cx = ultimo + rubberband(cx - ultimo, n.width)
-    magnificar(e.clientX, e.clientY)
-    moverPill(cx, SEGUIR)
-  }
-
-  const onPointerUp = (e) => {
-    const g = gesto.current
-    if (!g || g.id !== e.pointerId) return
-    gesto.current = null
-    if (!g.activo) return                          // toque simple → lo maneja onClick
-    suprimirClick.current = true
-
-    // ¿Soltó sobre el botón central?
-    const fabIdx = ITEMS.findIndex(it => it.isFab)
-    const fab = btnRefs.current[fabIdx]?.getBoundingClientRect()
-    restaurar()
-    if (e.type === 'pointerup' && fab && e.clientX >= fab.left && e.clientX <= fab.right && e.clientY >= fab.top && e.clientY <= fab.bottom) {
-      if (activoIdx >= 0) moverPill(centro(activoIdx))
+    // Soltar sobre el botón central abre "Nueva"
+    const fab = btnRefs.current[FAB]?.getBoundingClientRect()
+    if (e.type === 'pointerup' && fab && e.clientX >= fab.left && e.clientX <= fab.right && e.clientY >= fab.top - 12 && e.clientY <= fab.bottom) {
+      detenerX()
+      moverA(reposo())
+      haptic(10)
       ir('/nueva')
       return
     }
 
-    // Proyectar el momentum y elegir la pestaña más cercana a donde "iba"
-    const m = g.muestras
-    const dt = m.length > 1 ? (m[m.length - 1].t - m[0].t) / 1000 : 0
-    const vel = dt > 0 && e.timeStamp - m[m.length - 1].t < 80 ? (m[m.length - 1].x - m[0].x) / dt : 0
-    const proyectado = pillX.get() + PILL_W / 2 + proyectar(vel)
-    let mejor = -1
-    let mejorDist = Infinity
-    ITEMS.forEach((item, i) => {
-      if (item.isFab) return
-      const d = Math.abs(proyectado - centro(i))
-      if (d < mejorDist) { mejorDist = d; mejor = i }
-    })
-    if (mejor < 0) return
-    moverPill(centro(mejor), SOLTAR)
-    ir(ITEMS[mejor].path)
+    g.samples.push({ x: e.clientX, t: e.timeStamp })
+    const cancelar = e.type === 'pointercancel' || g.top - e.clientY > CANCEL_DISTANCE
+    const v = cancelar ? 0 : velocityFrom(g.samples)
+    // El momentum la lleva como mucho una pestaña más allá de donde se soltó
+    const base = nearestPos(x.current)
+    const proj = nearestPos(x.current + project(v, 0.99))
+    const pos  = Math.max(base - 1, Math.min(base + 1, proj))
+    const idx  = cancelar ? activeRef.current : TABS[pos]
+    detenerX()
+    if (idx < 0) { moverA(reposo()); return }
+    moverA(centro(idx), Math.abs(v) > 300 ? { response: 0.4, damping: 0.8 } : SP_MOVE, v)
+    if (idx !== activeRef.current) {
+      fromDrag.current = true
+      haptic(10)
+      ir(ITEMS[idx].path)
+    }
   }
 
-  const onPointerLeave = (e) => {
-    if (e.pointerType !== 'mouse') return
-    hover.current = false
-    restaurar()
-    if (activoIdx >= 0) moverPill(centro(activoIdx))
+  // ── Mouse sin presionar: el lente sigue al puntero (solo computador) ──
+  const onHoverMove = (e) => {
+    if (e.pointerType !== 'mouse' || e.buttons !== 0 || gesture.current) return
+    const rect = navRef.current.getBoundingClientRect()
+    if (!hovering.current) { hovering.current = true; medir(); levantar(true) }
+    magnify(e.clientX - rect.left)
+    moverA(objetivoDesde(e.clientX, rect.left), { response: 0.22, damping: 1 })
   }
 
-  /* ── Render ─────────────────────────────────────── */
+  const onHoverLeave = (e) => {
+    if (e.pointerType !== 'mouse' || !hovering.current) return
+    hovering.current = false
+    if (gesture.current) return
+    levantar(false)
+    magnify(null)
+    moverA(reposo(), { response: 0.4, damping: 1 })
+  }
+
   return (
     <nav
       ref={navRef}
       className="navbar"
       aria-label="Principal"
+      data-oculta={oculta || undefined}
       onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-      onLostPointerCapture={onPointerUp}
-      onPointerLeave={onPointerLeave}
-      onClickCapture={e => {
-        if (suprimirClick.current) { suprimirClick.current = false; e.stopPropagation(); e.preventDefault() }
-      }}
+      onPointerMove={onHoverMove}
+      onPointerLeave={onHoverLeave}
     >
-      <motion.div
-        ref={pillRef}
-        className={`navbar-pill ${arrastrando ? 'pill-drag' : 'pill-rest'}`}
-        style={{ x: pillX }}
-        aria-hidden="true"
-      >
-        <div className="navbar-pill-fill" />
-        <div className="navbar-pill-shine" />
-      </motion.div>
+      {/* Lente: tinte, borde de luz y brillo especular */}
+      <div ref={pillRef} className="navbar-pill" data-lifted="false" aria-hidden="true">
+        <span className="navbar-pill-shine" />
+      </div>
 
       {ITEMS.map((item, i) => {
-        const active = i === activoIdx
-
         if (item.isFab) {
           return (
             <button
@@ -306,28 +413,18 @@ export default function NavBar() {
             </button>
           )
         }
-
-        const { Icon } = item
         return (
           <button
             key={item.id}
             ref={el => { btnRefs.current[i] = el }}
             onClick={() => ir(item.path)}
             className="nav-item"
-            aria-current={active ? 'page' : undefined}
+            aria-current={i === activoIdx ? 'page' : undefined}
+            aria-label={item.label}
           >
-            <div className="nav-icon-stack">
-              <div className="nav-icon-base"><Icon /></div>
-              <div
-                data-icon-fill=""
-                className="nav-icon-fill"
-                style={{ clipPath: active ? 'inset(0 0% 0 0%)' : 'inset(0 0 0 100%)' }}
-              >
-                <Icon />
-              </div>
-            </div>
-            <span data-label="" className="nav-label" style={{ color: active ? COLOR_ACTIVO : COLOR_INACTIVO }}>
-              {item.label}
+            <span className="nav-capa nav-base"><Contenido item={item} /></span>
+            <span ref={el => { litRefs.current[i] = el }} className="nav-capa nav-lit" aria-hidden="true">
+              <Contenido item={item} />
             </span>
           </button>
         )

@@ -4,6 +4,7 @@ import api from '../api'
 import Marca from '../componentes/Marca'
 import { AvisoError } from '../componentes/Controles'
 import './Acceso.css'
+import { marcarNovedadesVistas } from '../utils/novedades'
 
 export default function Registro() {
   const navigate = useNavigate()
@@ -30,6 +31,7 @@ export default function Registro() {
     setCargando(true)
     try {
       await api.post('/registro/', { ...form, username: form.username.trim(), email: form.email.trim() })
+      marcarNovedadesVistas()   // cuenta nueva: no necesita ver qué cambió
       setExito(true)
     } catch (err) {
       const msg = err.response?.data?.error || 'Error al crear la cuenta. Intenta de nuevo.'

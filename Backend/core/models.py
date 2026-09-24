@@ -63,6 +63,9 @@ class Cuenta(models.Model):
     # o una palabra para billeteras sin número. Separados por espacio: "8174 5284", "nequi".
     terminaciones = models.CharField(max_length=120, blank=True, default='')
 
+    # ¿Cuenta como plata para gastar en "Puedes gastar hoy"? Las de ahorro, no.
+    incluir_en_disponible = models.BooleanField(default=True)
+
     class Meta:
         ordering = ['nombre']
         unique_together = ['usuario', 'nombre']

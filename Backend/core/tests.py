@@ -252,3 +252,58 @@ class SesionTests(TestCase):
         from rest_framework_simplejwt.tokens import RefreshToken
         vida = RefreshToken(r.data['refresh'])['exp'] - RefreshToken(r.data['refresh'])['iat']
         self.assertEqual(vida, 30 * 24 * 3600)
+
+
+class DisponibleTests(Base):
+    """Hoy: jueves 24 de septiembre de 2026. Sueldo el 30 → 6 días."""
+    HOY = date(2026, 9, 24)
+
+    def setUp(self):
+        super().setUp()
+        Cuenta.objects.create(usuario=self.ana, nombre='Ahorros', balance_inicial=5_000_000, incluir_en_disponible=False)
+        self.visa = Cuenta.objects.create(usuario=self.ana, nombre='Visa', tipo='credito', dia_corte=15, dia_pago=30,
+                                          balance_inicial=200_000)
+        TransaccionRecurrente.objects.create(usuario=self.ana, nombre='Sueldo', monto=3_000_000, tipo='ingreso',
+                                             frecuencia='mensual', dia_ejecucion=30, cuenta_destino=self.debito)
+        TransaccionRecurrente.objects.create(usuario=self.ana, nombre='Netflix', monto=45_000, tipo='gasto',
+                                             frecuencia='mensual', dia_ejecucion=27, cuenta_origen=self.visa)
+        TransaccionRecurrente.objects.create(usuario=self.ana, nombre='Arriendo', monto=900_000, tipo='gasto',
+                                             frecuencia='mensual', dia_ejecucion=1, cuenta_origen=self.debito)
+        self.gasto(30_000, fecha=self.HOY)                       # débito
+        self.gasto(20_000, fecha=self.HOY, cuenta=self.visa)     # tarjeta
+
+    def pedir(self):
+        with patch('core.views.timezone.localdate', return_value=self.HOY):
+            return self.api.get('/api/disponible/').data
+
+    def test_calculo(self):
+        d = self.pedir()
+        self.assertEqual(d['proximo_ingreso'], {'fecha': '2026-09-30', 'nombre': 'Sueldo', 'fuente': 'recurrente'})
+        self.assertEqual(d['dias_restantes'], 6)
+        self.assertEqual(d['desglose']['cuentas'], 970_000)      # los ahorros no cuentan
+        self.assertEqual(d['desglose']['tarjetas'], 220_000)
+        self.assertEqual(d['desglose']['pendientes'], 45_000)    # Netflix sí; el arriendo es después del sueldo
+        self.assertEqual(d['disponible'], 705_000)
+        self.assertEqual(d['gastado_hoy'], 50_000)
+        self.assertEqual(d['por_dia'], 755_000 // 6)             # lo de hoy se devuelve para fijar la cifra
+        self.assertEqual(d['queda_hoy'], 755_000 // 6 - 50_000)
+        self.assertEqual(d['estado'], 'bien')
+
+    def test_sin_sueldo_usa_el_periodo(self):
+        TransaccionRecurrente.objects.filter(tipo='ingreso').delete()
+        d = self.pedir()
+        self.assertEqual((d['proximo_ingreso']['fecha'], d['proximo_ingreso']['fuente']), ('2026-10-01', 'periodo'))
+        self.assertEqual(d['dias_restantes'], 7)
+
+    def test_compromisos_mayores_que_la_plata(self):
+        self.gasto(900_000, fecha=date(2026, 9, 20))
+        d = self.pedir()
+        self.assertEqual(d['estado'], 'negativo')
+        self.assertEqual(d['por_dia'], 0)
+
+    def test_quincena(self):
+        from .disponible import ocurre
+        rec = TransaccionRecurrente(frecuencia='quincenal', dia_ejecucion=15)
+        self.assertTrue(ocurre(rec, date(2026, 9, 30)))
+        self.assertTrue(ocurre(rec, date(2026, 2, 28)))         # 30 de febrero → 28
+        self.assertFalse(ocurre(rec, date(2026, 9, 29)))

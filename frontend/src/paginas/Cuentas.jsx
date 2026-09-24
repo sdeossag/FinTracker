@@ -5,7 +5,7 @@ import Pagina from '../componentes/Pagina'
 import Icono from '../componentes/Icono'
 import Sheet, { ConfirmarSheet } from '../componentes/Sheet'
 import TarjetaSheet from '../componentes/TarjetaSheet'
-import { AvisoError, CampoMonto, EstadoVacio, Segmentado, SelectorColor } from '../componentes/Controles'
+import { AvisoError, CampoMonto, EstadoVacio, Interruptor, Segmentado, SelectorColor } from '../componentes/Controles'
 import { formatCOP } from '../utils/formato'
 import {
   AYUDA_TIPO_CUENTA, COLOR_TONO, TIPOS_CUENTA, esDeuda, patrimonio, resumenTarjeta,
@@ -14,7 +14,7 @@ import {
 const COLORES = ['#34C759', '#0A84FF', '#BF5AF2', '#FF9F0A', '#FFD60A', '#FF453A', '#64D2FF', '#FF375F']
 const cuentaVacia = {
   nombre: '', tipo: 'activo', balance_inicial: '', color_hex: '#0A84FF',
-  cupo: '', dia_corte: '', dia_pago: '', terminaciones: '',
+  cupo: '', dia_corte: '', dia_pago: '', terminaciones: '', incluir_en_disponible: true,
   _balance_actual_ref: 0, _balance_inicial_ref: 0,
 }
 const DIAS = Array.from({ length: 31 }, (_, i) => i + 1)
@@ -65,6 +65,7 @@ export default function Cuentas() {
       dia_corte: cuenta.dia_corte ? String(cuenta.dia_corte) : '',
       dia_pago: cuenta.dia_pago ? String(cuenta.dia_pago) : '',
       terminaciones: cuenta.terminaciones || '',
+      incluir_en_disponible: cuenta.incluir_en_disponible !== false,
       _balance_actual_ref: cuenta.balance_actual,
       _balance_inicial_ref: cuenta.balance_inicial,
       _balance_actual_editable: String(cuenta.balance_actual),
@@ -115,6 +116,7 @@ export default function Cuentas() {
         balance_inicial: balanceInicialFinal,
         color_hex: form.color_hex,
         terminaciones: form.terminaciones,
+        incluir_en_disponible: form.incluir_en_disponible,
         ...(form.tipo === 'credito' ? {
           cupo: form.cupo ? parseInt(form.cupo) : null,
           dia_corte: parseInt(form.dia_corte),
@@ -347,6 +349,25 @@ export default function Cuentas() {
               onChange={v => setForm({ ...form, balance_inicial: v })}
             />
             {esTarjeta && <p className="campo-ayuda">Todo lo que debes en la tarjeta, incluidas las compras recientes.</p>}
+          </div>
+        )}
+
+        {form.tipo === 'activo' && (
+          <div className="campo">
+            <div className="lista-grupo" style={{ background: 'var(--card-hover)' }}>
+              <div className="fila" style={{ minHeight: 52 }}>
+                <div className="fila-cuerpo">
+                  <p className="texto-cuerpo">Plata para gastar</p>
+                  <p className="fila-sub">Cuenta en "Puedes gastar hoy"</p>
+                </div>
+                <Interruptor
+                  activo={form.incluir_en_disponible}
+                  onChange={v => setForm({ ...form, incluir_en_disponible: v })}
+                  etiqueta="Plata para gastar"
+                />
+              </div>
+            </div>
+            <p className="campo-ayuda">Apágalo en cuentas de ahorro o bolsillos que no quieres tocar.</p>
           </div>
         )}
 

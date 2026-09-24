@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icono from './Icono'
+import { contenedorScroll, scrollActual } from '../utils/scroll'
 
 export default function Pagina({
   titulo,
@@ -28,12 +29,13 @@ export default function Pagina({
       const t = tituloRef.current
       if (!barra) return
       const limite = barra.getBoundingClientRect().bottom
-      setCompacta(t ? t.getBoundingClientRect().bottom < limite : window.scrollY > 4)
+      setCompacta(t ? t.getBoundingClientRect().bottom < limite : scrollActual() > 4)
     }
     const onScroll = () => { if (!raf) raf = requestAnimationFrame(medir) }
     medir()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => { window.removeEventListener('scroll', onScroll); cancelAnimationFrame(raf) }
+    const objetivo = contenedorScroll() || window
+    objetivo.addEventListener('scroll', onScroll, { passive: true })
+    return () => { objetivo.removeEventListener('scroll', onScroll); cancelAnimationFrame(raf) }
   }, [])
 
   const volver = () => {

@@ -27,6 +27,7 @@ from webauthn.helpers import bytes_to_base64url
 from webauthn.helpers.structs import PublicKeyCredentialDescriptor
 
 from .tarjetas import estados_tarjetas
+from . import disponible
 from .ingesta import (
     billetera, entender, plan_de_registro, procesar_sms, reprocesar_pendientes, resumen_para_atajo,
 )
@@ -98,30 +99,31 @@ def sumas_por_tipo(qs):
     })
 
 
+def cuentas_con_saldo(usuario):
+    """Cuentas activas con entradas y salidas anotadas: el saldo de todas en una sola consulta."""
+    def total(campo):
+        return Coalesce(
+            Subquery(
+                Transaccion.objects.filter(**{campo: OuterRef('pk')})
+                .order_by().values(campo).annotate(t=Sum('monto')).values('t'),
+                output_field=BigIntegerField(),
+            ),
+            0,
+        )
+
+    return Cuenta.objects.filter(usuario=usuario, activa=True).annotate(
+        total_entradas=total('cuenta_destino'),
+        total_salidas=total('cuenta_origen'),
+    )
+
+
 class CuentaViewSet(viewsets.ModelViewSet):
     """CRUD completo de cuentas — solo las del usuario autenticado"""
     serializer_class = CuentaSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # Entradas y salidas de todas las cuentas en la misma consulta (antes: 2 por cuenta)
-        def total(campo):
-            return Coalesce(
-                Subquery(
-                    Transaccion.objects.filter(**{campo: OuterRef('pk')})
-                    .order_by().values(campo).annotate(t=Sum('monto')).values('t'),
-                    output_field=BigIntegerField(),
-                ),
-                0,
-            )
-
-        return Cuenta.objects.filter(
-            usuario=self.request.user,
-            activa=True,
-        ).annotate(
-            total_entradas=total('cuenta_destino'),
-            total_salidas=total('cuenta_origen'),
-        )
+        return cuentas_con_saldo(self.request.user)
 
     def list(self, request, *args, **kwargs):
         cuentas = list(self.get_queryset())
@@ -815,3 +817,12 @@ class MensajeBancoViewSet(viewsets.ReadOnlyModelViewSet):
             cuenta.save(update_fields=['terminaciones'])
         registrados = reprocesar_pendientes(request.user)
         return Response({'registrados': registrados, 'cuenta': cuenta.nombre, 'terminacion': ident})
+
+
+class DisponibleView(APIView):
+    """Cuánto puedes gastar hoy y por día hasta el próximo ingreso."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        cuentas = list(cuentas_con_saldo(request.user))
+        return Response(disponible.calcular(request.user, cuentas, timezone.localdate()))

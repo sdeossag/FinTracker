@@ -54,7 +54,8 @@
   --safe-top:    env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --nav-alto:    66px;
-  --nav-bottom:  max(14px, var(--safe-bottom));
+  /* Flota sobre el indicador de inicio, como la barra de iOS 26 (igual que NutriFit) */
+  --nav-bottom:  max(10px, calc(var(--safe-bottom) - 10px));
   --nav-espacio: calc(var(--nav-alto) + var(--nav-bottom) + 28px);
 
   /* ── Tipografía: primero la del sistema (SF Pro en iOS, con tamaño óptico) ── */
@@ -920,3 +921,32 @@ textarea.campo-inline { resize: none; line-height: 1.4; min-height: 72px; }
 .btn-barra.fuerte { font-weight: 600; }
 .btn-barra:active { opacity: 0.5; }
 .btn-barra:disabled { opacity: 0.35; }
+
+/* ── Contenedor de la app: fijo, con el scroll adentro ── */
+#app-shell {
+  position: fixed;
+  inset: 0;
+  max-width: 430px;
+  margin: 0 auto;
+  background: var(--fondo);
+}
+#scroller {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;   /* el rebote queda dentro: la barra no se mueve */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── "Puedes gastar hoy" ─────────────────────── */
+.disponible {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 28px;
+  padding: 16px 18px 16px;
+  transition: transform 160ms var(--ease-out);
+}
+.disponible:active { transform: scale(0.985); }
+@media (prefers-reduced-motion: reduce) { .disponible:active { transform: none; } }

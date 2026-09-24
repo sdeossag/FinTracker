@@ -1,16 +1,16 @@
-/* NavBar · FinTracker — barra flotante de material translúcido */
+/* NavBar · FinTracker — barra flotante de material translúcido (física de NutriFit) */
 
 .navbar {
   position: fixed;
   bottom: var(--nav-bottom);
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, 0);
   width: calc(100% - 32px);
   max-width: 398px;
+  height: var(--nav-alto);
   display: flex;
-  align-items: flex-end;
-  justify-content: space-around;
-  padding: 10px 8px;
+  align-items: center;
+  padding: 0 4px;
   background: rgba(22, 22, 24, 0.78);
   -webkit-backdrop-filter: saturate(180%) blur(28px);
   backdrop-filter: saturate(180%) blur(28px);
@@ -23,131 +23,121 @@
   touch-action: none;          /* el arrastre horizontal entre pestañas es nuestro */
   -webkit-user-select: none;
   user-select: none;
+  transition: transform 280ms var(--ease-out), opacity 200ms ease;
+}
+/* Con el teclado abierto la barra se va por donde vino (abajo) */
+.navbar[data-oculta="true"] {
+  transform: translate(-50%, calc(100% + var(--nav-bottom) + 8px));
+  opacity: 0;
+  pointer-events: none;
 }
 
-/* ── Píldora ────────────────────────────────────────── */
+/* ── Lente ──────────────────────────────────────────── */
 .navbar-pill {
   position: absolute;
-  top: 3px;
+  top: 6px;
+  bottom: 6px;
   left: 0;
-  width: 64px;
-  height: 52px;
   border-radius: 22px;
+  background: rgba(10, 132, 255, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12),
+    inset 0 0 0 0.5px rgba(10, 132, 255, 0.3),
+    0 0 18px rgba(10, 132, 255, 0.1);
   pointer-events: none;
-  z-index: 0;
-  opacity: 0;                  /* aparece al colocarse en la pestaña activa */
   will-change: transform;
-  transition: opacity 200ms ease;
+  transition: background-color 200ms ease, box-shadow 200ms ease, opacity 200ms ease;
 }
-
-.navbar-pill-fill {
-  position: absolute;
-  inset: 0;
-  border-radius: 20px;
-  transition: background-color 280ms ease, border-color 280ms ease, box-shadow 280ms ease;
+/* Presionado: el vidrio se ilumina y se separa de la barra */
+.navbar-pill[data-lifted="true"] {
+  background: rgba(10, 132, 255, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.14),
+    inset 0 0 0 0.5px rgba(10, 132, 255, 0.45),
+    0 0 26px rgba(10, 132, 255, 0.22),
+    0 8px 20px rgba(0, 0, 0, 0.35);
 }
-
 .navbar-pill-shine {
   position: absolute;
-  top: 2px;
-  left: 8px;
-  right: 8px;
-  height: 36%;
-  border-radius: 14px 14px 50% 50%;
-  pointer-events: none;
-  transition: opacity 280ms ease;
+  top: 1px;
+  left: 10px;
+  right: 10px;
+  height: 40%;
+  border-radius: 18px 18px 50% 50%;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.14), transparent);
 }
 
-/* Reposo: vidrio neutro */
-.pill-rest .navbar-pill-fill {
-  background: rgba(255, 255, 255, 0.055);
-  border: 0.5px solid rgba(255, 255, 255, 0.09);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 1px 4px rgba(0, 0, 0, 0.2);
-}
-.pill-rest .navbar-pill-shine {
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.07), transparent);
-}
-
-/* Arrastre / hover: vidrio azul */
-.pill-drag .navbar-pill-fill {
-  background: rgba(10, 132, 255, 0.14);
-  border: 0.5px solid rgba(10, 132, 255, 0.34);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.08),
-    0 0 18px rgba(10, 132, 255, 0.22);
-}
-.pill-drag .navbar-pill-shine {
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.16), transparent);
-}
-
-/* ── Pestaña ────────────────────────────────────────── */
-.nav-item,
-.nav-fab-wrapper {
+/* ── Pestaña: capa base gris + capa azul recortada por el lente ── */
+.nav-item {
   position: relative;
   z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   flex: 1;
-  min-height: 48px;
+  height: 100%;
   background: none;
   border: none;
   cursor: pointer;
   transform-origin: center bottom;
-  transition: transform 180ms var(--ease-out);
-  will-change: transform;
+  transition: none;            /* la lupa la mueve un resorte; una transición la retrasaría */
 }
-.nav-item { gap: 5px; padding: 4px 6px; }
-.nav-fab-wrapper { gap: 4px; padding: 0 6px; }
-
-.nav-icon-stack {
-  position: relative;
-  width: 22px;
-  height: 22px;
-  transition: transform 140ms var(--ease-out);
-}
-/* Respuesta inmediata al presionar, antes de soltar */
-.nav-item:active .nav-icon-stack { transform: scale(0.86); }
-
-.nav-icon-base,
-.nav-icon-fill {
+.nav-capa {
   position: absolute;
   inset: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 4px;
+  pointer-events: none;
 }
-.nav-icon-base { color: rgba(255, 255, 255, 0.4); }
-.nav-icon-fill { color: #0A84FF; }
+.nav-base { color: rgba(255, 255, 255, 0.45); }
+.nav-lit  { color: #0A84FF; clip-path: inset(0 100% 0 0); }
 
+/* Texto sobre vidrio: algo más de peso y tracking para que se lea */
 .nav-label {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.02em;
+  line-height: 1;
   white-space: nowrap;
 }
 
 /* ── Botón central ──────────────────────────────────── */
+.nav-fab-wrapper {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transform-origin: center bottom;
+}
 .nav-fab {
   width: 44px;
   height: 44px;
   border-radius: 15px;
-  margin-top: -14px;
+  margin-top: -18px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   background: linear-gradient(150deg, #3da8ff 0%, #0A84FF 50%, #0870d8 100%);
   box-shadow: 0 3px 12px rgba(10, 132, 255, 0.4), 0 1px 0 rgba(255, 255, 255, 0.22) inset;
-  transition: box-shadow 180ms ease, transform 140ms var(--ease-out);
+  transition: transform 140ms var(--ease-out);
 }
 .nav-fab-wrapper:active .nav-fab { transform: scale(0.9); }
-
 .nav-fab-label {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.02em;
+  line-height: 1;
   color: rgba(255, 255, 255, 0.45);
 }
 
@@ -156,10 +146,16 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .nav-item, .nav-fab-wrapper, .nav-icon-stack, .nav-fab { transition: none; }
-  .nav-item:active .nav-icon-stack, .nav-fab-wrapper:active .nav-fab { transform: none; }
+  .navbar, .nav-fab { transition: opacity 200ms ease; }
+  .nav-fab-wrapper:active .nav-fab { transform: none; }
 }
 
 @media (prefers-reduced-transparency: reduce) {
   .navbar { background: #161618; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .navbar-pill { background: rgba(10, 132, 255, 0.22); }
+}
+
+@media (prefers-contrast: more) {
+  .navbar-pill { box-shadow: inset 0 0 0 1.5px #0A84FF; }
+  .nav-base { color: rgba(255, 255, 255, 0.8); }
 }

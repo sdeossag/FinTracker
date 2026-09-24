@@ -10,6 +10,7 @@ import {
   useReducedMotion, useTransform,
 } from 'motion/react'
 import Icono from './Icono'
+import { bloquearScroll } from '../utils/scroll'
 
 const ABRIR   = { type: 'spring', bounce: 0, visualDuration: 0.38 }   // críticamente amortiguado
 const REGRESO = { type: 'spring', bounce: 0.2, visualDuration: 0.3 }  // viene de un gesto → leve rebote
@@ -90,7 +91,7 @@ function Panel({ onCerrar, titulo, children, pie, rol = 'dialog' }) {
     const yo = {}
     pila.push(yo)
     panelRef.current?.focus({ preventScroll: true })
-    if (bloqueos++ === 0) document.documentElement.style.overflow = 'hidden'
+    if (bloqueos++ === 0) bloquearScroll(true)
     const onKey = (e) => {
       if (e.key === 'Escape' && pila[pila.length - 1] === yo) { e.stopPropagation(); cerrar() }
     }
@@ -98,7 +99,7 @@ function Panel({ onCerrar, titulo, children, pie, rol = 'dialog' }) {
     return () => {
       document.removeEventListener('keydown', onKey)
       pila.splice(pila.indexOf(yo), 1)
-      if (--bloqueos === 0) document.documentElement.style.overflow = ''
+      if (--bloqueos === 0) bloquearScroll(false)
       if (previo && document.contains(previo)) previo.focus?.({ preventScroll: true })
     }
   }, [])
