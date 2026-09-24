@@ -109,6 +109,10 @@ export default function EditarTransaccion() {
     }
   }
 
+  const salir = () => {
+    if ((window.history.state?.idx ?? 0) > 0) navigate(-1)
+    else navigate('/transacciones')
+  }
   const atras = { etiqueta: 'Historial', a: '/transacciones' }
 
   if (cargando) return (
@@ -130,9 +134,21 @@ export default function EditarTransaccion() {
     </Pagina>
   )
 
+  const barra = {
+    titulo: 'Editar',
+    modal: true,
+    sinNav: true,
+    izquierda: <button type="button" className="btn-barra" onClick={salir}>Cancelar</button>,
+    acciones: (
+      <button type="submit" form="form-transaccion" className="btn-barra fuerte" disabled={guardando}>
+        {guardando ? 'Guardando…' : 'Guardar'}
+      </button>
+    ),
+  }
+
   return (
-    <Pagina titulo="Editar transacción" atras={atras} sinNav>
-      <form onSubmit={e => { e.preventDefault(); guardar() }} noValidate>
+    <Pagina {...barra}>
+      <form id="form-transaccion" onSubmit={e => { e.preventDefault(); guardar() }} noValidate>
         <TransaccionForm
           form={form}
           onCambio={cambiar}
@@ -143,19 +159,17 @@ export default function EditarTransaccion() {
 
         <AvisoError>{errorServidor}</AvisoError>
 
-        <button
-          type="button"
-          className="btn-texto peligro"
-          onClick={() => setConfirmEliminar(true)}
-          style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 4 }}
-        >
-          <Icono nombre="basura" size={18} />
-          Eliminar transacción
+        <button type="submit" className="btn-primario" disabled={guardando} style={{ marginTop: 28 }}>
+          {guardando ? 'Guardando…' : 'Guardar cambios'}
         </button>
 
-        <div className="barra-accion">
-          <button type="submit" className="btn-primario" disabled={guardando}>
-            {guardando ? 'Guardando…' : 'Guardar cambios'}
+        {/* Acción destructiva aparte, al final, como en iOS */}
+        <div className="lista-grupo" style={{ marginTop: 28 }}>
+          <button type="button" className="fila" onClick={() => setConfirmEliminar(true)} style={{ justifyContent: 'center', minHeight: 50 }}>
+            <span className="fila-titulo" style={{ color: 'var(--gasto)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Icono nombre="basura" size={18} />
+              Eliminar transacción
+            </span>
           </button>
         </div>
       </form>

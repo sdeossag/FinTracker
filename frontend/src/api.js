@@ -38,26 +38,47 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Interceptor de respuestas: Maneja la expiración del token (401)
+// Renovación del token de acceso.
+// — Va al backend real (BASE_URL): en producción el frontend está en otro dominio y
+//   la ruta relativa '/api/...' fallaba, cerrando la sesión cada vez que vencía el token.
+// — Una sola renovación a la vez: si vencen varias peticiones juntas, todas esperan la misma.
+let renovando = null
+
+function renovarAcceso() {
+  if (!renovando) {
+    const refresh = getRefreshToken()
+    renovando = (refresh
+      ? axios.post(`${BASE_URL}/token/refresh/`, { refresh })
+      : Promise.reject(Object.assign(new Error('Sin token de renovación'), { sinSesion: true }))
+    )
+      .then(({ data }) => {
+        // Con rotación activada el backend entrega también un refresh nuevo
+        setTokens(data.access, data.refresh || refresh)
+        return data.access
+      })
+      .finally(() => { renovando = null })
+  }
+  return renovando
+}
+
+// Solo se cierra la sesión si el servidor la rechaza, no por quedarse sin señal
+const sesionRechazada = (err) => err.sinSesion || [400, 401].includes(err.response?.status)
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true
       try {
-        const refresh = getRefreshToken()
-        if (!refresh) throw new Error('No refresh token')
-
-        const res = await axios.post('/api/token/refresh/', { refresh })
-        const { access } = res.data
-        setTokens(access, refresh)
-
+        const access = await renovarAcceso()
         originalRequest.headers.Authorization = `Bearer ${access}`
         return api(originalRequest)
       } catch (refreshError) {
-        clearTokens()
-        window.location.href = '/login'
+        if (sesionRechazada(refreshError)) {
+          clearTokens()
+          window.location.href = '/login'
+        }
         return Promise.reject(refreshError)
       }
     }

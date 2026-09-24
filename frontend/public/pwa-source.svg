@@ -1,11 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- Fondo negro liso (sin bordes redondeados — el generador aplica el mask) -->
-  <rect width="512" height="512" fill="#0A0A0A"/>
-  <!-- Tres barras ascendentes -->
-  <rect x="96" y="316" width="82" height="130" rx="18" fill="#2B7FFF" opacity="0.45"/>
-  <rect x="215" y="236" width="82" height="210" rx="18" fill="#2B7FFF" opacity="0.72"/>
-  <rect x="334" y="136" width="82" height="310" rx="18" fill="#2B7FFF"/>
-  <!-- Línea de tendencia -->
-  <polyline points="137,308 256,228 375,130" fill="none" stroke="#5B9EFF" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="375" cy="130" r="17" fill="#5B9EFF"/>
+  <!-- Misma marca que dentro de la app (componentes/Marca.jsx).
+       Cuadrado completo: iOS y Android aplican su propia máscara redondeada. -->
+  <defs>
+    <linearGradient id="fondo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3DA8FF"/>
+      <stop offset="0.45" stop-color="#0A84FF"/>
+      <stop offset="1" stop-color="#0055CC"/>
+    </linearGradient>
+    <linearGradient id="brillo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#fondo)"/>
+  <rect width="512" height="512" fill="url(#brillo)"/>
+  <!-- Línea de tendencia (icono "grafica", 24×24) al 53 % del lado. El trazo vive entre
+       y=9 y y=19, así que se sube 2 unidades para centrarlo ópticamente. -->
+  <g transform="translate(120.3 97.7) scale(11.3)">
+    <path d="M3 19 8.5 12.5l4 4L17 9l4 3" fill="none" stroke="#FFFFFF" stroke-width="2.4"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
 </svg>

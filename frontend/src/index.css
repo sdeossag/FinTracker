@@ -225,7 +225,8 @@ input, textarea, select { font-size: 16px; }
   transform: translateY(4px);
   transition: opacity 200ms ease, transform 250ms var(--ease-out);
 }
-.barra[data-compacta="true"] .barra-titulo { opacity: 1; transform: none; }
+.barra[data-compacta="true"] .barra-titulo,
+.barra[data-modal="true"] .barra-titulo { opacity: 1; transform: none; }
 
 .cabecera-pagina { padding: 4px 0 20px; }
 .cabecera-pagina .sobre-titulo {
@@ -827,3 +828,95 @@ select.input {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* ── Formulario en lista agrupada (como Calendario o Contactos) ── */
+.fila-campo {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 50px;
+  padding: 4px 16px;
+  transition: background-color 120ms ease;
+}
+.fila-campo + .fila-campo::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 16px;
+  height: 0.5px;
+  background: var(--separador);
+}
+.fila-campo.tocable { cursor: pointer; }
+.fila-campo.tocable:active { background: rgba(255, 255, 255, 0.05); }
+.fila-campo:has(.selector-oculto:focus-visible) { box-shadow: inset 0 0 0 2px var(--acento); }
+.fila-campo-label { flex-shrink: 0; font-size: 1.0625rem; letter-spacing: -0.01em; }
+.fila-campo.invalida .fila-campo-label { color: var(--gasto); }
+.fila-campo-valor {
+  margin-left: auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 1.0625rem;
+  color: var(--texto-secundario);
+}
+.fila-campo-valor .nombre { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fila-campo-valor.vacio { color: var(--texto-terciario); }
+/* El select nativo cubre la fila: se ve la fila, se abre el selector del sistema */
+.selector-oculto {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  font-size: 16px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.campo-inline {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--texto-primario);
+  font: inherit;
+  font-size: 1.0625rem;          /* 17px: sin zoom en iOS */
+  padding: 11px 0;
+}
+.campo-inline::placeholder { color: var(--texto-terciario); }
+textarea.campo-inline { resize: none; line-height: 1.4; min-height: 72px; }
+.fila-campo.invalida .campo-inline::placeholder { color: var(--gasto); opacity: 0.8; }
+/* Fecha como píldora, igual que en Calendario */
+.fecha-pildora {
+  margin-left: auto;
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--relleno);
+  border: none;
+  border-radius: 8px;
+  color: var(--texto-primario);
+  font: inherit;
+  font-size: 1.0625rem;
+  font-variant-numeric: tabular-nums;
+  min-height: 34px;
+  padding: 5px 10px;
+  color-scheme: dark;
+}
+.fecha-pildora::-webkit-date-and-time-value { text-align: center; }
+.fecha-pildora::-webkit-calendar-picker-indicator { display: none; }
+.form-avisos { margin: 8px 16px 0; display: flex; flex-direction: column; gap: 4px; }
+.form-avisos p { margin: 0; }
+.btn-barra {
+  min-height: 44px;
+  padding: 0 8px;
+  font-size: 1.0625rem;
+  color: var(--acento);
+  border-radius: var(--radio-sm);
+  transition: opacity 140ms ease;
+}
+.btn-barra.fuerte { font-weight: 600; }
+.btn-barra:active { opacity: 0.5; }
+.btn-barra:disabled { opacity: 0.35; }

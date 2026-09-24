@@ -1,4 +1,7 @@
-// Formulario compartido por Nueva y Editar transacción
+// Formulario compartido por Nueva y Editar transacción.
+// Patrón de iOS para crear algo (Calendario, Contactos): tipo y monto arriba,
+// y los datos en una lista agrupada — etiqueta a la izquierda, valor a la derecha.
+import { Fragment } from 'react'
 import { Link } from 'react-router-dom'
 import Icono from './Icono'
 import { CampoMonto, Segmentado } from './Controles'
@@ -8,7 +11,7 @@ import { esDeuda } from '../utils/cuentas'
 // [origen, destino] según el tipo
 const ETIQUETA_CUENTA = {
   gasto: ['Pagado con', null],
-  ingreso: [null, 'Cuenta'],
+  ingreso: [null, 'Entra a'],
   ahorro: ['Sale de', 'Entra a'],
   transferencia: ['Desde', 'Hacia'],
 }
@@ -19,7 +22,9 @@ const GRUPOS_CUENTA = [
   { etiqueta: 'Deudas', tipos: ['pasivo'] },
 ]
 
-export default function TransaccionForm({ form, onCambio, cuentas, categorias, errores = {}, autoFocusMonto = false, cargando = false }) {
+export default function TransaccionForm({
+  form, onCambio, cuentas, categorias, errores = {}, autoFocusMonto = false, cargando = false,
+}) {
   const set = (campo) => (e) => onCambio({ [campo]: e.target.value })
   const categoriasTipo = categorias.filter(c => c.tipo === form.tipo)
   const color = COLOR_TIPO[form.tipo]
@@ -35,8 +40,8 @@ export default function TransaccionForm({ form, onCambio, cuentas, categorias, e
     .map(g => ({ ...g, lista: cuentas.filter(c => g.tipos.includes(c.tipo)) }))
     .filter(g => g.lista.length > 0)
   const opcion = c => <option key={c.id} value={c.id}>{c.nombre}</option>
-
   const cuentaDe = (campo) => cuentas.find(c => String(c.id) === String(form[campo]))
+
   const ayudaCuenta = (campo) => {
     const c = cuentaDe(campo)
     if (!c) return null
@@ -49,29 +54,46 @@ export default function TransaccionForm({ form, onCambio, cuentas, categorias, e
     return null
   }
 
-  const selectorCuenta = (campo, etiqueta) => {
-    const ayuda = !errores[campo] && ayudaCuenta(campo)
+  const filaCuenta = (campo, etiqueta) => {
+    const c = cuentaDe(campo)
     return (
-      <div className="campo">
-        <label className="label" htmlFor={campo}>{etiqueta}</label>
+      <div className={`fila-campo tocable${errores[campo] ? ' invalida' : ''}`}>
+        <span className="fila-campo-label" aria-hidden="true">{etiqueta}</span>
+        <span className={`fila-campo-valor${c ? '' : ' vacio'}`} aria-hidden="true">
+          {c && <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.color_hex, flexShrink: 0 }} />}
+          <span className="nombre">{c ? c.nombre : 'Elegir'}</span>
+          <Icono nombre="chevron-down" size={14} grosor={2.4} style={{ flexShrink: 0, color: 'var(--texto-terciario)' }} />
+        </span>
         <select
           id={campo}
-          className="input"
+          className="selector-oculto"
           value={form[campo]}
           onChange={set(campo)}
+          aria-label={etiqueta}
           aria-invalid={!!errores[campo] || undefined}
-          aria-describedby={errores[campo] ? `${campo}-error` : ayuda ? `${campo}-ayuda` : undefined}
+          aria-describedby={errores[campo] ? `${campo}-error` : undefined}
         >
-          <option value="">Seleccionar cuenta…</option>
+          <option value="">Elegir cuenta…</option>
           {grupos.length > 1
             ? grupos.map(g => <optgroup key={g.etiqueta} label={g.etiqueta}>{g.lista.map(opcion)}</optgroup>)
             : cuentas.map(opcion)}
         </select>
-        {errores[campo] && <p id={`${campo}-error`} className="campo-error">{errores[campo]}</p>}
-        {ayuda && <p id={`${campo}-ayuda`} className="campo-ayuda">{ayuda}</p>}
       </div>
     )
   }
+
+  const camposCuenta = [
+    usaOrigen(form.tipo) && ['cuenta_origen', ETIQUETA_CUENTA[form.tipo][0]],
+    usaDestino(form.tipo) && ['cuenta_destino', ETIQUETA_CUENTA[form.tipo][1]],
+  ].filter(Boolean)
+
+  // Errores y ayudas del grupo, debajo de la lista (como el pie de sección de iOS)
+  const avisos = [
+    errores.nombre && { id: 'nombre-error', texto: errores.nombre, error: true },
+    ...camposCuenta.map(([campo]) => errores[campo]
+      ? { id: `${campo}-error`, texto: errores[campo], error: true }
+      : ayudaCuenta(campo) && { id: `${campo}-ayuda`, texto: ayudaCuenta(campo) }),
+  ].filter(Boolean)
 
   return (
     <>
@@ -84,7 +106,7 @@ export default function TransaccionForm({ form, onCambio, cuentas, categorias, e
       />
 
       {/* Monto: el protagonista de la pantalla */}
-      <div style={{ padding: '28px 0 26px', textAlign: 'center' }}>
+      <div style={{ padding: '26px 0 24px', textAlign: 'center' }}>
         <label htmlFor="monto" className="sr-only">Monto en pesos</label>
         <CampoMonto
           id="monto"
@@ -96,7 +118,6 @@ export default function TransaccionForm({ form, onCambio, cuentas, categorias, e
           autoFocus={autoFocusMonto}
           aria-describedby={errores.monto ? 'monto-error' : undefined}
         />
-        <p className="texto-mini" style={{ marginTop: 6 }}>Pesos colombianos</p>
         {errores.monto && <p id="monto-error" className="campo-error" style={{ textAlign: 'center' }}>{errores.monto}</p>}
       </div>
 
@@ -108,33 +129,37 @@ export default function TransaccionForm({ form, onCambio, cuentas, categorias, e
         </div>
       )}
 
-      <div className="campo">
-        <label className="label" htmlFor="nombre">Descripción</label>
-        <input
-          id="nombre"
-          className="input"
-          placeholder="Ej: Metro, almuerzo…"
-          value={form.nombre}
-          onChange={set('nombre')}
-          enterKeyHint="next"
-          autoCapitalize="sentences"
-          aria-invalid={!!errores.nombre || undefined}
-          aria-describedby={errores.nombre ? 'nombre-error' : undefined}
-        />
-        {errores.nombre && <p id="nombre-error" className="campo-error">{errores.nombre}</p>}
+      {/* Detalle */}
+      <div className="lista-grupo">
+        <div className={`fila-campo${errores.nombre ? ' invalida' : ''}`}>
+          <input
+            id="nombre"
+            className="campo-inline"
+            placeholder="Descripción (Ej: almuerzo, Uber)"
+            aria-label="Descripción"
+            value={form.nombre}
+            onChange={set('nombre')}
+            enterKeyHint="done"
+            autoCapitalize="sentences"
+            aria-invalid={!!errores.nombre || undefined}
+            aria-describedby={errores.nombre ? 'nombre-error' : undefined}
+          />
+        </div>
+        <label className="fila-campo" htmlFor="fecha">
+          <span className="fila-campo-label">Fecha</span>
+          <input id="fecha" className="fecha-pildora" type="date" value={form.fecha} onChange={set('fecha')} required />
+        </label>
+        {camposCuenta.map(([campo, etiqueta]) => <Fragment key={campo}>{filaCuenta(campo, etiqueta)}</Fragment>)}
       </div>
-
-      <div className="campo">
-        <label className="label" htmlFor="fecha">Fecha</label>
-        <input id="fecha" className="input" type="date" value={form.fecha} onChange={set('fecha')} />
-      </div>
-
-      {usaOrigen(form.tipo) && selectorCuenta('cuenta_origen', ETIQUETA_CUENTA[form.tipo][0])}
-      {usaDestino(form.tipo) && selectorCuenta('cuenta_destino', ETIQUETA_CUENTA[form.tipo][1])}
+      {avisos.length > 0 && (
+        <div className="form-avisos">
+          {avisos.map(a => <p key={a.id} id={a.id} className={a.error ? 'campo-error' : 'campo-ayuda'} style={{ margin: 0 }}>{a.texto}</p>)}
+        </div>
+      )}
 
       {categoriasTipo.length > 0 && (
-        <div className="campo">
-          <p className="label" id="cats-label">Categorías <span style={{ color: 'var(--texto-terciario)' }}>· puedes elegir varias</span></p>
+        <section style={{ marginTop: 26 }}>
+          <h2 className="seccion-label" id="cats-label">Categorías</h2>
           <div role="group" aria-labelledby="cats-label" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {categoriasTipo.map(cat => {
               const sel = form.categorias.includes(cat.id)
@@ -159,19 +184,22 @@ export default function TransaccionForm({ form, onCambio, cuentas, categorias, e
               )
             })}
           </div>
-        </div>
+          <p className="seccion-pie">Puedes elegir varias.</p>
+        </section>
       )}
 
-      <div className="campo">
-        <label className="label" htmlFor="notas">Notas <span style={{ color: 'var(--texto-terciario)' }}>· opcional</span></label>
-        <textarea
-          id="notas"
-          className="input"
-          placeholder="Agrega un detalle si quieres…"
-          value={form.notas}
-          onChange={set('notas')}
-          rows={3}
-        />
+      <div className="lista-grupo" style={{ marginTop: 26 }}>
+        <div className="fila-campo">
+          <textarea
+            id="notas"
+            className="campo-inline"
+            placeholder="Notas (opcional)"
+            aria-label="Notas"
+            value={form.notas}
+            onChange={set('notas')}
+            rows={3}
+          />
+        </div>
       </div>
     </>
   )

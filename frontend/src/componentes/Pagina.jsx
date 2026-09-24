@@ -12,6 +12,7 @@ export default function Pagina({
   izquierda,      // nodo propio en lugar del botón atrás
   acciones,       // nodos a la derecha de la barra
   sinNav = false,
+  modal = false,   // tarea enfocada (crear/editar): título siempre en la barra, sin Large Title
   children,
 }) {
   const navigate = useNavigate()
@@ -42,7 +43,7 @@ export default function Pagina({
 
   return (
     <div className={`pagina${sinNav ? ' sin-nav' : ''}`}>
-      <header className="barra" data-compacta={compacta} ref={barraRef}>
+      <header className="barra" data-compacta={compacta} data-modal={modal || undefined} ref={barraRef}>
         <div className="barra-lado">
           {izquierda ?? (atras && (
             <button type="button" className="btn-atras" onClick={volver}>
@@ -55,7 +56,7 @@ export default function Pagina({
         <div className="barra-lado der">{acciones}</div>
       </header>
 
-      {titulo && (
+      {titulo && !modal && (
         <div className="cabecera-pagina">
           {sobreTitulo && <p className="sobre-titulo">{sobreTitulo}</p>}
           <h1 ref={tituloRef} className="titulo-grande">{titulo}</h1>

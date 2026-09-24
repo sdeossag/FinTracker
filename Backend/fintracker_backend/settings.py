@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -114,6 +115,14 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': None,
     # El endpoint del atajo es público (con token propio): límite contra abusos
     'DEFAULT_THROTTLE_RATES': {'ingesta': '120/hour'},
+}
+
+# Sesión: el acceso dura 1 hora y se renueva solo. El refresh dura 30 días y se
+# renueva con cada uso, así que mientras abras la app no te vuelve a pedir contraseña.
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
+    'ROTATE_REFRESH_TOKENS': True,
 }
 
 SITE_ID = 1

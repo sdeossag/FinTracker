@@ -131,11 +131,18 @@ export default function AtajoSheet({ abierto, onCerrar }) {
           </li>
           <li>Marca <b>Ejecutar inmediatamente</b> (sin confirmar).</li>
           <li>
-            Agrega la acción <b>Obtener contenido de URL</b>: pega la URL, método <b>POST</b>, encabezado{' '}
-            <code>X-Token-Ingesta</code> con tu token, y cuerpo <b>JSON</b> con{' '}
-            <code>texto</code> = <i>Entrada del atajo</i> y <code>remitente</code> = el número del banco.
+            Agrega la acción <b>Obtener contenido de URL</b> (Get Contents of URL): pega la URL, método <b>POST</b>, encabezado{' '}
+            <code>X-Token-Ingesta</code> con tu token, y cuerpo <b>JSON</b> con dos campos:{' '}
+            <code>remitente</code> = el número del banco (escrito) y <code>texto</code> = la variable{' '}
+            <b>Entrada del atajo</b> (Shortcut Input).
+            <span style={{ display: 'block', marginTop: 6, color: 'var(--ahorro)' }}>
+              No la escribas: en el campo vacío tócala en la barra sobre el teclado (o en Select Variable). Debe quedar como una burbuja de color.
+            </span>
           </li>
-          <li>Opcional: agrega <b>Mostrar notificación</b> con el resultado para ver qué se registró.</li>
+          <li>
+            Opcional, para ver qué se registró: agrega <b>Obtener valor del diccionario</b> (Get Dictionary Value) con clave{' '}
+            <code>mensaje</code> sobre <i>Contenido de la URL</i>, y luego <b>Mostrar notificación</b> (Show Notification) con ese valor.
+          </li>
           <li>Repite con Nequi si también lo usas.</li>
         </ol>
         <p className="campo-ayuda" style={{ marginBottom: 22 }}>

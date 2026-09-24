@@ -7,6 +7,7 @@ import Pagina from '../componentes/Pagina'
 import TransaccionForm from '../componentes/TransaccionForm'
 import { TIPOS_TRANSACCION, validarTransaccion } from '../utils/transaccion'
 import { AvisoError } from '../componentes/Controles'
+import { ConfirmarSheet } from '../componentes/Sheet'
 import { fechaLocalISO, formatCOP, vibrar } from '../utils/formato'
 
 // Acepta datos precargados por la URL, p. ej. el botón "Pagar" de una tarjeta:
@@ -45,6 +46,7 @@ export default function NuevaTransaccion() {
   const [guardando, setGuardando] = useState(false)
   const [errores, setErrores] = useState({})
   const [errorServidor, setErrorServidor] = useState('')
+  const [confirmarSalida, setConfirmarSalida] = useState(false)
 
   useEffect(() => {
     const cargar = async () => {
@@ -117,9 +119,28 @@ export default function NuevaTransaccion() {
     }
   }
 
+  // Cancelar: si ya escribiste algo, se pregunta antes de perderlo
+  const hayCambios = !!(form.monto || form.nombre.trim() || form.notas.trim() || form.categorias.length)
+  const salir = () => {
+    if ((window.history.state?.idx ?? 0) > 0) navigate(-1)
+    else navigate('/')
+  }
+  const cancelar = () => (hayCambios && !precargado ? setConfirmarSalida(true) : salir())
+  const TEXTO_GUARDAR = { transferencia: 'Registrar transferencia', ingreso: 'Registrar ingreso', ahorro: 'Registrar ahorro' }
+
   return (
-    <Pagina titulo="Nueva transacción" atras={{ etiqueta: 'Atrás', a: '/' }} sinNav>
-      <form onSubmit={e => { e.preventDefault(); guardar() }} noValidate>
+    <Pagina
+      titulo="Nueva transacción"
+      modal
+      sinNav
+      izquierda={<button type="button" className="btn-barra" onClick={cancelar}>Cancelar</button>}
+      acciones={
+        <button type="submit" form="form-transaccion" className="btn-barra fuerte" disabled={guardando}>
+          {guardando ? 'Guardando…' : 'Guardar'}
+        </button>
+      }
+    >
+      <form id="form-transaccion" onSubmit={e => { e.preventDefault(); guardar() }} noValidate>
         <TransaccionForm
           form={form}
           onCambio={cambiar}
@@ -132,12 +153,20 @@ export default function NuevaTransaccion() {
 
         <AvisoError>{errorServidor}</AvisoError>
 
-        <div className="barra-accion">
-          <button type="submit" className="btn-primario" disabled={guardando}>
-            {guardando ? 'Guardando…' : form.tipo === 'transferencia' ? 'Registrar transferencia' : 'Registrar transacción'}
-          </button>
-        </div>
+        {/* Al final del formulario, no fijo: en iPhone un botón pegado abajo salta con el teclado */}
+        <button type="submit" className="btn-primario" disabled={guardando} style={{ marginTop: 28 }}>
+          {guardando ? 'Guardando…' : TEXTO_GUARDAR[form.tipo] || 'Registrar gasto'}
+        </button>
       </form>
+
+      <ConfirmarSheet
+        abierto={confirmarSalida}
+        onCerrar={() => setConfirmarSalida(false)}
+        titulo="¿Descartar esta transacción?"
+        mensaje="Lo que escribiste no se guardará."
+        textoConfirmar="Descartar"
+        onConfirmar={() => { setConfirmarSalida(false); salir() }}
+      />
     </Pagina>
   )
 }

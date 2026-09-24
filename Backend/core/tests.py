@@ -239,3 +239,16 @@ class TarjetaCreditoTests(Base):
         with CaptureQueriesContext(connection) as q:
             self.api.get('/api/cuentas/')
         self.assertEqual(len(q), 2)
+
+
+class SesionTests(TestCase):
+    def test_refresh_rota_y_dura_30_dias(self):
+        User.objects.create_user('ana', password='clave-segura')
+        api = APIClient()
+        tokens = api.post('/api/token/', {'username': 'ana', 'password': 'clave-segura'}).data
+        r = api.post('/api/token/refresh/', {'refresh': tokens['refresh']})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('refresh', r.data)                  # rotación: sesión que se renueva con el uso
+        from rest_framework_simplejwt.tokens import RefreshToken
+        vida = RefreshToken(r.data['refresh'])['exp'] - RefreshToken(r.data['refresh'])['iat']
+        self.assertEqual(vida, 30 * 24 * 3600)
