@@ -42,6 +42,7 @@ export default function EditarTransaccion() {
           cuenta_destino: t.cuenta_destino ? String(t.cuenta_destino) : '',
           categorias: (t.categorias || []).map(c => c.id),
           notas: t.notas || '',
+          cuotas: t.cuotas || 1,
         })
         setCuentas(ensureArray(resCuentas.data))
         setCategorias(ensureArray(resCat.data))
@@ -82,6 +83,7 @@ export default function EditarTransaccion() {
         cuenta_origen: form.cuenta_origen || null,
         cuenta_destino: form.cuenta_destino || null,
         categorias_ids: form.categorias,
+        cuotas: Number(form.cuotas) || 1,
         notas: form.notas,
       })
       vibrar()

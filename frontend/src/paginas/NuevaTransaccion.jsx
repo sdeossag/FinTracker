@@ -24,6 +24,7 @@ const formInicial = (params) => {
     cuenta_destino: params.get('destino') || '',
     categorias: [],
     notas: '',
+    cuotas: 1,
   }
 }
 
@@ -103,6 +104,7 @@ export default function NuevaTransaccion() {
         cuenta_origen: form.cuenta_origen || null,
         cuenta_destino: form.cuenta_destino || null,
         categorias_ids: form.categorias,
+        cuotas: Number(form.cuotas) || 1,
         // Viene de la bandeja de SMS: al guardar, el mensaje queda resuelto
         ...(params.get('mensaje') ? { mensaje_banco: Number(params.get('mensaje')) } : {}),
       })

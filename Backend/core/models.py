@@ -22,6 +22,8 @@ class PerfilUsuario(models.Model):
     token_ingesta = models.CharField(max_length=64, blank=True, default='', db_index=True)
     token_ingesta_creado = models.DateTimeField(null=True, blank=True)
     token_ingesta_usado = models.DateTimeField(null=True, blank=True)
+    # Última versión de "Novedades" que vio: se muestra una sola vez por cuenta, en cualquier dispositivo
+    novedades_vistas = models.CharField(max_length=60, blank=True, default='')
 
     class Meta:
         verbose_name = 'Perfil de usuario'
@@ -196,6 +198,9 @@ class Transaccion(models.Model):
         ('sms', 'SMS del banco'),
     ]
     origen = models.CharField(max_length=10, choices=ORIGENES, default='manual')
+
+    # Compras con tarjeta de crédito a cuotas: se factura una cuota por corte
+    cuotas = models.PositiveSmallIntegerField(default=1)
 
     notas = models.TextField(blank=True, default='')
     creada_en = models.DateTimeField(auto_now_add=True)

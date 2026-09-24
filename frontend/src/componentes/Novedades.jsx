@@ -1,13 +1,17 @@
 // "Novedades": se abre sola una vez por versión, la primera vez que la persona entra
 // después de actualizar. Estilo "What's New" de iOS: título grande, filas con ícono
 // de color y un solo botón. Las cuentas nuevas no la ven (para ellas todo es nuevo):
-// el onboarding la marca como vista.
-import { useState } from 'react'
+// el registro y el onboarding la marcan como vista.
+// Se marca como vista apenas se muestra (no al cerrarla): así, aunque cierres la app
+// con la hoja abierta, no vuelve a salir.
+import { useEffect, useState } from 'react'
 import Sheet from './Sheet'
 import Icono from './Icono'
-import { marcarNovedadesVistas, novedadesPendientes } from '../utils/novedades'
+import { hayNovedades, marcarNovedadesVistas } from '../utils/novedades'
 
 const NOVEDADES = [
+  { icono: 'calendario', color: '#FF9F0A', titulo: 'Compras a cuotas',
+    texto: 'Al pagar con tarjeta de crédito eliges en cuántas cuotas. Cada mes solo cuenta la cuota: la tarjeta te muestra cuánto va y cuánto falta de cada compra.' },
   { icono: 'objetivo', color: '#30D158', titulo: 'Puedes gastar hoy',
     texto: 'En Inicio ves cuánto puedes gastar hoy y por día hasta tu próximo sueldo, ya descontando tarjetas y pagos que vienen. Tócalo para ver el cálculo.' },
   { icono: 'tarjeta', color: '#BF5AF2', titulo: 'Tarjetas de crédito',
@@ -28,14 +32,24 @@ const NOTAS = [
   'La sesión ya no se cierra sola cada rato: te mantiene adentro 30 días mientras uses la app.',
   'Los saldos de deudas se corrigieron: lo que debes ahora resta de tu patrimonio, como debe ser.',
   'Si tenías una tarjeta guardada como "Pasivo", edítala en Cuentas y cámbiala a "Tarjeta" con sus fechas.',
-  'Ícono nuevo: en iPhone, borra FinTracker de la pantalla de inicio y vuelve a agregarlo desde Safari para verlo.',
-  'La barra de abajo ya no se descuadra y se esconde cuando escribes.',
+  'En iPhone, borra FinTracker de la pantalla de inicio y agrégalo de nuevo desde Safari: así ves el ícono nuevo y la app ocupa toda la pantalla, sin la franja negra de abajo.',
+  'La barra de abajo ya no se descuadra y se esconde cuando escribes.'
 ]
 
 export default function Novedades() {
-  const [abierta, setAbierta] = useState(novedadesPendientes)
+  const [abierta, setAbierta] = useState(false)
 
-  const cerrar = () => { marcarNovedadesVistas(); setAbierta(false) }
+  useEffect(() => {
+    let vivo = true
+    hayNovedades().then(mostrar => {
+      if (!vivo || !mostrar) return
+      marcarNovedadesVistas()
+      setAbierta(true)
+    })
+    return () => { vivo = false }
+  }, [])
+
+  const cerrar = () => setAbierta(false)
 
   return (
     <Sheet

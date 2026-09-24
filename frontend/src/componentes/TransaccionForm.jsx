@@ -7,6 +7,7 @@ import Icono from './Icono'
 import { CampoMonto, Segmentado } from './Controles'
 import { COLOR_TIPO, TIPOS_TRANSACCION, conTipo, usaDestino, usaOrigen } from '../utils/transaccion'
 import { esDeuda } from '../utils/cuentas'
+import { formatCOP } from '../utils/formato'
 
 // [origen, destino] según el tipo
 const ETIQUETA_CUENTA = {
@@ -15,6 +16,9 @@ const ETIQUETA_CUENTA = {
   ahorro: ['Sale de', 'Entra a'],
   transferencia: ['Desde', 'Hacia'],
 }
+
+// Las más usadas en Colombia primero; el selector del sistema muestra la lista completa
+const OPCIONES_CUOTAS = [1, 2, 3, 4, 5, 6, 9, 12, 18, 24, 36, 48]
 
 const GRUPOS_CUENTA = [
   { etiqueta: 'Cuentas', tipos: ['activo'] },
@@ -46,7 +50,11 @@ export default function TransaccionForm({
     const c = cuentaDe(campo)
     if (!c) return null
     if (campo === 'cuenta_origen' && form.tipo === 'gasto' && c.tipo === 'credito') {
-      return 'Queda como deuda en la tarjeta. Cuando la pagues, registra una transferencia.'
+      const n = Number(form.cuotas) || 1
+      const cuota = n > 1 && form.monto ? Math.round(parseInt(form.monto) / n) : 0
+      return n > 1
+        ? `${n} cuotas${cuota ? ` de ${formatCOP(cuota)}` : ''}: cada mes se cobra una. Cuando la pagues, registra una transferencia.`
+        : 'Queda como deuda en la tarjeta. Cuando la pagues, registra una transferencia.'
     }
     if (campo === 'cuenta_destino' && form.tipo === 'transferencia' && esDeuda(c.tipo)) {
       return 'Pago de deuda: no cuenta como gasto, porque lo que compraste ya se contó.'
@@ -81,6 +89,10 @@ export default function TransaccionForm({
       </div>
     )
   }
+
+  const conTarjeta = form.tipo === 'gasto' && cuentaDe('cuenta_origen')?.tipo === 'credito'
+  const cuotas = Number(form.cuotas) || 1
+  const valorCuota = cuotas > 1 && form.monto ? Math.round(parseInt(form.monto) / cuotas) : 0
 
   const camposCuenta = [
     usaOrigen(form.tipo) && ['cuenta_origen', ETIQUETA_CUENTA[form.tipo][0]],
@@ -150,6 +162,26 @@ export default function TransaccionForm({
           <input id="fecha" className="fecha-pildora" type="date" value={form.fecha} onChange={set('fecha')} required />
         </label>
         {camposCuenta.map(([campo, etiqueta]) => <Fragment key={campo}>{filaCuenta(campo, etiqueta)}</Fragment>)}
+        {conTarjeta && (
+          <div className="fila-campo tocable">
+            <span className="fila-campo-label" aria-hidden="true">Cuotas</span>
+            <span className="fila-campo-valor" aria-hidden="true">
+              <span className="nombre">
+                {cuotas === 1 ? 'Una sola' : `${cuotas}${valorCuota ? ` × ${formatCOP(valorCuota)}` : ''}`}
+              </span>
+              <Icono nombre="chevron-down" size={14} grosor={2.4} style={{ flexShrink: 0, color: 'var(--texto-terciario)' }} />
+            </span>
+            <select
+              id="cuotas"
+              className="selector-oculto"
+              value={cuotas}
+              onChange={e => onCambio({ cuotas: Number(e.target.value) })}
+              aria-label="Número de cuotas"
+            >
+              {OPCIONES_CUOTAS.map(n => <option key={n} value={n}>{n === 1 ? '1 (una sola cuota)' : `${n} cuotas`}</option>)}
+            </select>
+          </div>
+        )}
       </div>
       {avisos.length > 0 && (
         <div className="form-avisos">

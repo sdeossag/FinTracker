@@ -30,4 +30,4 @@ export function validarTransaccion(f) {
 }
 
 // Cambiar de tipo conserva lo escrito; solo reinicia lo que depende del tipo
-export const conTipo = (f, tipo) => ({ ...f, tipo, cuenta_origen: '', cuenta_destino: '', categorias: [] })
+export const conTipo = (f, tipo) => ({ ...f, tipo, cuenta_origen: '', cuenta_destino: '', categorias: [], cuotas: 1 })

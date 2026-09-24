@@ -1,16 +1,17 @@
 # "Puedes gastar $X al día hasta tu próximo ingreso".
 #
 # Plata para gastar = saldo de las cuentas que cuentan (las de ahorro se pueden excluir)
-#                     − todo lo que se debe en tarjetas de crédito
+#                     − lo que se debe en tarjetas de crédito (sin las cuotas de meses futuros)
 #                     − gastos recurrentes que faltan antes del próximo ingreso.
 # Por día = esa plata al empezar el día ÷ días hasta el próximo ingreso.
 # Así lo gastado hoy no cambia la cifra diaria, solo lo que queda de hoy.
 import calendar
 from datetime import timedelta
 
-from django.db.models import Q, Sum
+from django.db.models import F, Q, Sum
 
-from .models import Cuenta, PerfilUsuario, Transaccion, TransaccionRecurrente
+from .models import PerfilUsuario, Transaccion, TransaccionRecurrente
+from .tarjetas import estados_tarjetas
 
 
 def _dia(anio, mes, dia):
@@ -61,7 +62,12 @@ def calcular(usuario, cuentas, hoy):
     dias = max((fecha_ingreso - hoy).days, 1)
 
     en_cuentas = sum(c.balance_actual for c in cuentas if c.tipo == 'activo' and c.incluir_en_disponible)
-    en_tarjetas = sum(max(c.balance_actual, 0) for c in cuentas if c.tipo == 'credito')
+    # Las compras a cuotas se cobran mes a mes: solo cuenta lo que no está diferido
+    estados = estados_tarjetas(cuentas, hoy)
+    en_tarjetas = sum(
+        max(c.balance_actual - (estados.get(c.id) or {}).get('diferido', 0), 0)
+        for c in cuentas if c.tipo == 'credito'
+    )
 
     # Lo que ya está comprometido antes del próximo ingreso: gastos y pagos programados
     pendientes = []
@@ -81,13 +87,14 @@ def calcular(usuario, cuentas, hoy):
 
     disponible = en_cuentas - en_tarjetas - en_pendientes
 
-    # Gastado hoy (con débito o crédito): se devuelve al disponible para fijar la cifra del día
+    # Gastado hoy (con débito o crédito): se devuelve al disponible para fijar la cifra del día.
+    # Una compra a cuotas solo pesa hoy lo de su primera cuota.
     gastado_hoy = Transaccion.objects.filter(
         usuario=usuario, tipo='gasto', fecha=hoy,
     ).filter(
         Q(cuenta_origen__tipo='credito')
         | Q(cuenta_origen__tipo='activo', cuenta_origen__incluir_en_disponible=True)
-    ).aggregate(t=Sum('monto'))['t'] or 0
+    ).aggregate(t=Sum(F('monto') / F('cuotas')))['t'] or 0
 
     por_dia = max(disponible + gastado_hoy, 0) // dias
     queda_hoy = por_dia - gastado_hoy

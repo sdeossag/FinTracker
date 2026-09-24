@@ -104,6 +104,39 @@ function Detalle({ tarjeta, e }) {
         <Dato titulo="Último corte" valor={fechaCorta(e.ultimo_corte)} />
         <Dato titulo="Próximo corte" valor={fechaCorta(e.proximo_corte)} />
       </div>
+
+      {/* Compras a cuotas: cuánto va y cuánto falta de cada una */}
+      {e.compras_a_cuotas?.length > 0 && (
+        <section aria-label="Compras a cuotas" style={{ marginTop: 22 }}>
+          <h3 className="seccion-label">Compras a cuotas</h3>
+          <div className="lista-grupo" style={{ background: 'var(--card-hover)' }}>
+            {e.compras_a_cuotas.map((c, i) => {
+              const falta = c.monto - Math.round(c.monto * c.facturadas / c.cuotas)
+              return (
+                <div key={i} className="fila" style={{ alignItems: 'flex-start', paddingTop: 12, paddingBottom: 12 }}>
+                  <div className="fila-cuerpo">
+                    <p className="texto-cuerpo" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nombre}</p>
+                    <p className="fila-sub" style={{ whiteSpace: 'normal' }}>
+                      {c.facturadas === 0 ? `${c.cuotas} cuotas, la primera en el próximo corte` : `Van ${c.facturadas} de ${c.cuotas} cuotas`}
+                      {' · '}{formatCOP(c.cuota)} al mes
+                    </p>
+                    <div className="progress-track" role="presentation" style={{ marginTop: 8, height: 4 }}>
+                      <div className="progress-fill" style={{ transform: `scaleX(${c.facturadas / c.cuotas})`, background: tarjeta.color_hex }} />
+                    </div>
+                  </div>
+                  <span style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <span className="cifra" style={{ display: 'block', fontWeight: 600 }}>{formatCOP(falta)}</span>
+                    <span className="texto-mini">por cobrar</span>
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+          <p className="campo-ayuda">
+            Cada mes solo entra la cuota al pago. {e.diferido > 0 && `Quedan ${formatCOP(e.diferido)} para los meses siguientes. `}Sin contar intereses.
+          </p>
+        </section>
+      )}
     </>
   )
 }

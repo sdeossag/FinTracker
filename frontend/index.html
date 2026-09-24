@@ -21,7 +21,12 @@
 
     <!-- iOS PWA — apple-touch-icon DEBE ser PNG (iOS ignora SVG) -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- "black" y no "black-translucent": con translúcida, iOS 26 deja el área visible de
+         la app instalada 62 pt más corta que la pantalla (unas veces sí y otras no): queda
+         una franja negra abajo y la barra de pestañas se descuadra. Con "black" la app ocupa
+         exactamente el espacio bajo la barra de estado (igual que NutriFit).
+         iOS lee esta etiqueta solo al instalar: hay que quitar la app y agregarla de nuevo. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="FinTracker" />
     <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
 
@@ -29,7 +34,8 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="application-name" content="FinTracker" />
   </head>
-  <body>
+  <!-- ontouchstart vacío: hace que :active funcione al tocar en iOS Safari -->
+  <body ontouchstart="">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

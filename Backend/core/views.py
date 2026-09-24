@@ -438,6 +438,7 @@ class PerfilView(APIView):
             'username': request.user.username,
             'email': request.user.email,
             'periodo_inicio': perfil.periodo_inicio,
+            'novedades_vistas': perfil.novedades_vistas,
         })
 
     def patch(self, request):
@@ -456,6 +457,12 @@ class PerfilView(APIView):
             request.user.email    = nuevo_email
             request.user.save(update_fields=['username', 'email'])
 
+        # Novedades vistas (versión)
+        vistas = request.data.get('novedades_vistas')
+        if vistas is not None:
+            perfil.novedades_vistas = str(vistas)[:60]
+            perfil.save(update_fields=['novedades_vistas'])
+
         # Actualizar período de inicio
         periodo = request.data.get('periodo_inicio')
         if periodo is not None:
@@ -472,6 +479,7 @@ class PerfilView(APIView):
             'username': request.user.username,
             'email': request.user.email,
             'periodo_inicio': perfil.periodo_inicio,
+            'novedades_vistas': perfil.novedades_vistas,
         })
 
 

@@ -307,3 +307,63 @@ class DisponibleTests(Base):
         self.assertTrue(ocurre(rec, date(2026, 9, 30)))
         self.assertTrue(ocurre(rec, date(2026, 2, 28)))         # 30 de febrero → 28
         self.assertFalse(ocurre(rec, date(2026, 9, 29)))
+
+
+class CuotasTests(Base):
+    """Visa: corte el 15, pago el 30. Hoy: 24 de septiembre de 2026."""
+    HOY = date(2026, 9, 24)
+
+    def setUp(self):
+        super().setUp()
+        self.visa = Cuenta.objects.create(usuario=self.ana, nombre='Visa', tipo='credito', dia_corte=15, dia_pago=30)
+        Cuenta.objects.filter(pk=self.visa.pk).update(creada_en=timezone.make_aware(datetime(2026, 1, 1)))
+
+    def compra(self, monto, fecha, cuotas):
+        return Transaccion.objects.create(usuario=self.ana, nombre='Celular', monto=monto, tipo='gasto',
+                                          fecha=fecha, cuenta_origen=self.visa, cuotas=cuotas)
+
+    def estado(self):
+        with patch('core.views.timezone.localdate', return_value=self.HOY):
+            return next(c for c in self.api.get('/api/cuentas/').data if c['nombre'] == 'Visa')['estado_tarjeta']
+
+    def test_solo_se_paga_la_cuota_del_mes(self):
+        # 1.200.000 a 12 cuotas, comprado el 10 de julio: cuotas en los cortes de jul, ago y sep
+        self.compra(1_200_000, date(2026, 7, 10), 12)
+        e = self.estado()
+        self.assertEqual(e['por_pagar'], 300_000)           # 3 cuotas facturadas, nada abonado
+        self.assertEqual(e['diferido'], 800_000)            # tras el corte de octubre quedan 8
+        c = e['compras_a_cuotas'][0]
+        self.assertEqual((c['cuota'], c['facturadas'], c['cuotas']), (100_000, 3, 12))
+
+    def test_compra_del_ciclo_abierto(self):
+        self.compra(600_000, date(2026, 9, 20), 6)          # entra en el corte del 15 de octubre
+        e = self.estado()
+        self.assertEqual(e['por_pagar'], 0)
+        self.assertEqual(e['diferido'], 500_000)            # en octubre se cobra 1 de 6
+        self.assertEqual(e['compras_a_cuotas'][0]['facturadas'], 0)
+
+    def test_disponible_no_resta_cuotas_futuras(self):
+        self.compra(1_200_000, self.HOY, 12)
+        with patch('core.views.timezone.localdate', return_value=self.HOY):
+            d = self.api.get('/api/disponible/').data
+        self.assertEqual(d['desglose']['tarjetas'], 100_000)   # solo la primera cuota
+        self.assertEqual(d['gastado_hoy'], 100_000)
+
+    def test_cuotas_solo_con_tarjeta_de_credito(self):
+        base = {'nombre': 'x', 'monto': 1000, 'tipo': 'gasto', 'fecha': '2026-09-01', 'cuotas': 6}
+        r = self.api.post('/api/transacciones/', {**base, 'cuenta_origen': self.debito.id}, format='json')
+        self.assertEqual(r.data['cuotas'], 1)
+        r = self.api.post('/api/transacciones/', {**base, 'cuenta_origen': self.visa.id}, format='json')
+        self.assertEqual(r.data['cuotas'], 6)
+
+    def test_ultima_cuota_absorbe_el_redondeo(self):
+        from .tarjetas import facturado
+        self.assertEqual(facturado(100_000, 3, 3), 100_000)
+        self.assertEqual(facturado(100_000, 3, 1), 33_333)
+
+
+class NovedadesTests(Base):
+    def test_se_guarda_en_el_perfil(self):
+        self.assertEqual(self.api.get('/api/perfil/').data['novedades_vistas'], '')
+        self.api.patch('/api/perfil/', {'novedades_vistas': 'v2'}, format='json')
+        self.assertEqual(self.api.get('/api/perfil/').data['novedades_vistas'], 'v2')

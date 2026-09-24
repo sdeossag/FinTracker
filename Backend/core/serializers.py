@@ -185,10 +185,11 @@ class TransaccionSerializer(SoloDelUsuarioMixin, serializers.ModelSerializer):
             'id', 'nombre', 'monto', 'fecha', 'tipo',
             'cuenta_origen', 'cuenta_destino',
             'cuenta_origen_nombre', 'cuenta_destino_nombre', 'cuenta_destino_tipo',
-            'categorias', 'categorias_ids', 'origen', 'mensaje_banco',
+            'categorias', 'categorias_ids', 'origen', 'mensaje_banco', 'cuotas',
             'notas', 'creada_en',
         ]
         read_only_fields = ['creada_en']
+        extra_kwargs = {'cuotas': {'min_value': 1, 'max_value': 48}}
 
     def validate(self, data):
         # En un PATCH, lo que no viene se toma de la transacción guardada
@@ -206,6 +207,10 @@ class TransaccionSerializer(SoloDelUsuarioMixin, serializers.ModelSerializer):
                 raise serializers.ValidationError('Se necesita cuenta de origen y de destino.')
             if cuenta_origen == cuenta_destino:
                 raise serializers.ValidationError('La cuenta de origen y la de destino deben ser distintas.')
+        # Las cuotas solo existen en compras con tarjeta de crédito
+        if tipo != 'gasto' or not cuenta_origen or cuenta_origen.tipo != 'credito':
+            if 'cuotas' in data or (self.instance and self.instance.cuotas != 1):
+                data['cuotas'] = 1
         return data
 
     def create(self, validated_data):
