@@ -1,5 +1,8 @@
 # Serializers de FinTracker — convierten modelos a JSON y viceversa
+from django.utils import timezone
 from rest_framework import serializers
+
+from .tarjetas import estados_tarjetas
 from .models import Cuenta, Categoria, Transaccion, TransaccionCategoria, TransaccionRecurrente, UserCredential
 
 class UserCredentialSerializer(serializers.ModelSerializer):
@@ -59,14 +62,39 @@ def asignar_categorias(transaccion, categorias_ids, usuario):
 class CuentaSerializer(serializers.ModelSerializer):
     # Campo calculado — solo lectura
     balance_actual = serializers.ReadOnlyField()
+    # Solo tarjetas: corte, fecha límite, cuánto pagar. La vista lo calcula en lote.
+    estado_tarjeta = serializers.SerializerMethodField()
 
     class Meta:
         model = Cuenta
         fields = [
             'id', 'nombre', 'tipo', 'balance_inicial',
-            'balance_actual', 'color_hex', 'activa', 'creada_en'
+            'balance_actual', 'color_hex', 'activa', 'creada_en',
+            'cupo', 'dia_corte', 'dia_pago', 'estado_tarjeta',
         ]
         read_only_fields = ['creada_en']
+        extra_kwargs = {
+            'dia_corte': {'min_value': 1, 'max_value': 31},
+            'dia_pago': {'min_value': 1, 'max_value': 31},
+            'cupo': {'min_value': 0},
+        }
+
+    def get_estado_tarjeta(self, cuenta):
+        estados = self.context.get('estados_tarjeta')
+        if estados is None:
+            estados = estados_tarjetas([cuenta], timezone.localdate())
+        return estados.get(cuenta.id)
+
+    def validate(self, data):
+        tipo = data.get('tipo', getattr(self.instance, 'tipo', 'activo'))
+        if tipo == 'credito':
+            for campo, nombre in (('dia_corte', 'día de corte'), ('dia_pago', 'día de pago')):
+                if data.get(campo, getattr(self.instance, campo, None)) is None:
+                    raise serializers.ValidationError({campo: f'Indica el {nombre} de la tarjeta.'})
+        else:
+            # Los datos de tarjeta no aplican a otras cuentas
+            data.update(cupo=None, dia_corte=None, dia_pago=None)
+        return data
 
     def create(self, validated_data):
         # Asigna automáticamente el usuario autenticado
@@ -123,29 +151,40 @@ class TransaccionSerializer(SoloDelUsuarioMixin, serializers.ModelSerializer):
         read_only=True,
         default=None,
     )
+    # Para mostrar "Pago de tarjeta" cuando una transferencia va a una deuda
+    cuenta_destino_tipo = serializers.CharField(
+        source='cuenta_destino.tipo',
+        read_only=True,
+        default=None,
+    )
 
     class Meta:
         model = Transaccion
         fields = [
             'id', 'nombre', 'monto', 'fecha', 'tipo',
             'cuenta_origen', 'cuenta_destino',
-            'cuenta_origen_nombre', 'cuenta_destino_nombre',
+            'cuenta_origen_nombre', 'cuenta_destino_nombre', 'cuenta_destino_tipo',
             'categorias', 'categorias_ids',
             'notas', 'creada_en',
         ]
         read_only_fields = ['creada_en']
 
     def validate(self, data):
-        tipo = data.get('tipo')
-        cuenta_origen = data.get('cuenta_origen')
-        cuenta_destino = data.get('cuenta_destino')
+        # En un PATCH, lo que no viene se toma de la transacción guardada
+        actual = lambda campo: data.get(campo, getattr(self.instance, campo, None))
+        tipo = actual('tipo')
+        cuenta_origen = actual('cuenta_origen')
+        cuenta_destino = actual('cuenta_destino')
 
         if tipo == 'gasto' and not cuenta_origen:
             raise serializers.ValidationError('Un gasto requiere cuenta de origen.')
         if tipo == 'ingreso' and not cuenta_destino:
             raise serializers.ValidationError('Un ingreso requiere cuenta de destino.')
-        if tipo == 'ahorro' and not (cuenta_origen and cuenta_destino):
-            raise serializers.ValidationError('Un ahorro requiere cuenta origen y destino.')
+        if tipo in ('ahorro', 'transferencia'):
+            if not (cuenta_origen and cuenta_destino):
+                raise serializers.ValidationError('Se necesita cuenta de origen y de destino.')
+            if cuenta_origen == cuenta_destino:
+                raise serializers.ValidationError('La cuenta de origen y la de destino deben ser distintas.')
         return data
 
     def create(self, validated_data):

@@ -11,6 +11,9 @@ import Icono from '../componentes/Icono'
 import { EstadoVacio } from '../componentes/Controles'
 import Marca from '../componentes/Marca'
 import { capitalizar, formatCOP } from '../utils/formato'
+import {
+  COLOR_TONO, esDeuda, fechaCorta, patrimonio, plazo, resumenTarjeta, rutaPagarTarjeta, tarjetasPorPagar,
+} from '../utils/cuentas'
 
 export default function Inicio() {
   const navigate = useNavigate()
@@ -90,8 +93,8 @@ export default function Inicio() {
     }
   }
 
-  const balanceTotal = cuentas.reduce((acc, c) =>
-    c.tipo === 'pasivo' ? acc - c.balance_actual : acc + c.balance_actual, 0)
+  const balanceTotal = patrimonio(cuentas)
+  const porPagar = tarjetasPorPagar(cuentas)
 
   const mesActual = capitalizar(new Date().toLocaleString('es-CO', { month: 'long' }))
   const hora = new Date().getHours()
@@ -131,7 +134,7 @@ export default function Inicio() {
       izquierda={barraIzquierda}
       acciones={acciones}
       sobreTitulo={saludo}
-      tituloCompacto="Resumen"
+      tituloCompacto={false}
       titulo={<span className="skeleton" style={{ display: 'inline-block', width: 170, height: 32, verticalAlign: 'middle' }} />}
     >
       <div aria-busy="true">
@@ -148,7 +151,7 @@ export default function Inicio() {
       acciones={acciones}
       sobreTitulo={saludo}
       titulo={nombre}
-      tituloCompacto="Resumen"
+      tituloCompacto={false}
     >
       {errorCarga ? (
         <EstadoVacio
@@ -200,6 +203,13 @@ export default function Inicio() {
             </div>
           </section>
 
+          {/* ── Tarjetas por pagar: solo si vencen pronto ── */}
+          {porPagar.length > 0 && (
+            <section aria-label="Pagos de tarjeta" style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
+              {porPagar.map(t => <AvisoPago key={t.id} tarjeta={t} onPagar={() => navigate(rutaPagarTarjeta(t, t.estado_tarjeta.por_pagar))} />)}
+            </section>
+          )}
+
           {/* ── Cuentas ─────────────────────────────── */}
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
             <h2 className="seccion-label">Mis cuentas</h2>
@@ -210,16 +220,18 @@ export default function Inicio() {
           <div className="lista-grupo">
             {cuentas.map(cuenta => (
               <button key={cuenta.id} className="fila" style={{ '--sangria': '64px' }} onClick={() => navigate('/cuentas')}>
-                <span className="mosaico" style={{ background: cuenta.color_hex + '26' }}>
-                  <span style={{ width: 12, height: 12, borderRadius: '50%', background: cuenta.color_hex }} />
+                <span className="mosaico" style={{ background: cuenta.color_hex + '26', color: cuenta.color_hex }}>
+                  {cuenta.tipo === 'credito'
+                    ? <Icono nombre="tarjeta" size={19} grosor={2} />
+                    : <span style={{ width: 12, height: 12, borderRadius: '50%', background: cuenta.color_hex }} />}
                 </span>
                 <div className="fila-cuerpo">
                   <p className="fila-titulo" style={{ fontWeight: 500 }}>{cuenta.nombre}</p>
-                  <p className="fila-sub">{cuenta.tipo === 'pasivo' ? 'Deuda' : 'Disponible'}</p>
+                  <SubCuenta cuenta={cuenta} />
                 </div>
                 <span className="cifra" style={{
                   fontWeight: 600, fontSize: 16, flexShrink: 0,
-                  color: cuenta.tipo === 'pasivo' ? 'var(--gasto)' : 'var(--texto-primario)',
+                  color: esDeuda(cuenta.tipo) && cuenta.balance_actual > 0 ? 'var(--gasto)' : 'var(--texto-primario)',
                 }}>
                   {formatCOP(cuenta.balance_actual)}
                 </span>
@@ -229,5 +241,52 @@ export default function Inicio() {
         </div>
       )}
     </Pagina>
+  )
+}
+
+function SubCuenta({ cuenta }) {
+  if (cuenta.tipo === 'credito') {
+    const r = resumenTarjeta(cuenta.estado_tarjeta)
+    return <p className="fila-sub" style={{ color: COLOR_TONO[r.tono] }}>{r.texto}</p>
+  }
+  return <p className="fila-sub">{cuenta.tipo === 'pasivo' ? 'Deuda' : 'Disponible'}</p>
+}
+
+// Recordatorio de pago: el monto y la fecha a la vista, la acción a un toque
+function AvisoPago({ tarjeta, onPagar }) {
+  const e = tarjeta.estado_tarjeta
+  const vencida = e.situacion === 'vencida'
+  const color = vencida ? 'var(--gasto)' : 'var(--ahorro)'
+  const cuando = vencida
+    ? `Vencido ${plazo(e.dias_para_pagar)}`
+    : `Vence ${plazo(e.dias_para_pagar)}, ${fechaCorta(e.fecha_limite)}`
+  return (
+    <div
+      className="lista-grupo"
+      role={vencida ? 'alert' : undefined}
+      style={{ borderColor: vencida ? 'rgba(255, 69, 58, 0.35)' : 'rgba(255, 214, 10, 0.25)' }}
+    >
+      {/* Toda la fila es el botón: el objetivo táctil es grande y la acción obvia */}
+      <button
+        className="fila"
+        onClick={onPagar}
+        aria-label={`Pagar ${formatCOP(e.por_pagar)} de ${tarjeta.nombre}. ${cuando}`}
+        style={{ minHeight: 68, gap: 12 }}
+      >
+        <span className="mosaico sm" style={{ background: color, color: vencida ? '#fff' : '#000' }}>
+          <Icono nombre={vencida ? 'alerta' : 'calendario'} size={16} grosor={2.2} />
+        </span>
+        <div className="fila-cuerpo">
+          <p className="fila-titulo" style={{ fontSize: 15, fontWeight: 600 }}>
+            <span className="cifra">{formatCOP(e.por_pagar)}</span>
+            <span style={{ fontWeight: 400, color: 'var(--texto-secundario)' }}> · {tarjeta.nombre}</span>
+          </p>
+          <p className="fila-sub" style={{ color }}>{cuando}</p>
+        </div>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 2, color: 'var(--acento)', fontWeight: 600, fontSize: 15, flexShrink: 0 }}>
+          Pagar<Icono nombre="chevron-right" size={16} grosor={2.4} />
+        </span>
+      </button>
+    </div>
   )
 }

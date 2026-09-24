@@ -7,7 +7,7 @@ import Icono from './Icono'
 export default function Pagina({
   titulo,
   sobreTitulo,
-  tituloCompacto,
+  tituloCompacto, // false: sin título en la barra compacta (la barra ya tiene marca)
   atras,          // { etiqueta, a } — "a" es la ruta si no hay historial al que volver
   izquierda,      // nodo propio en lugar del botón atrás
   acciones,       // nodos a la derecha de la barra
@@ -51,7 +51,7 @@ export default function Pagina({
             </button>
           ))}
         </div>
-        <div className="barra-titulo" aria-hidden={!compacta}>{tituloCompacto || titulo}</div>
+        <div className="barra-titulo" aria-hidden={!compacta}>{tituloCompacto === false ? null : (tituloCompacto || titulo)}</div>
         <div className="barra-lado der">{acciones}</div>
       </header>
 

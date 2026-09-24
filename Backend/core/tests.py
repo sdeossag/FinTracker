@@ -1,10 +1,11 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.db import connection
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .models import Categoria, Cuenta, Transaccion, TransaccionCategoria, TransaccionRecurrente
@@ -164,3 +165,77 @@ class AnalyticsTests(Base):
         self.assertEqual(d['por_categoria'], [{'nombre': 'Comida', 'color': self.comida.color_hex,
                                                 'monto': 40_000, 'porcentaje': 100}])
         self.assertEqual(len(d['mensual']), 1)
+
+
+class TarjetaCreditoTests(Base):
+    """Corte el 15, pago el 30. Hoy: 24 de septiembre de 2026."""
+    HOY = date(2026, 9, 24)
+
+    def setUp(self):
+        super().setUp()
+        self.visa = Cuenta.objects.create(usuario=self.ana, nombre='Visa', tipo='credito',
+                                          cupo=1_000_000, dia_corte=15, dia_pago=30)
+        Cuenta.objects.filter(pk=self.visa.pk).update(creada_en=timezone.make_aware(datetime(2026, 1, 1)))
+        self.gasto(300_000, fecha=date(2026, 9, 10), cuenta=self.visa)   # entra al extracto del 15
+        self.gasto(100_000, fecha=date(2026, 9, 20), cuenta=self.visa)   # ciclo abierto
+        Transaccion.objects.create(usuario=self.ana, nombre='Pago Visa', monto=120_000, tipo='transferencia',
+                                   fecha=date(2026, 9, 22), cuenta_origen=self.debito, cuenta_destino=self.visa)
+
+    def estado(self, hoy=HOY):
+        with patch('core.views.timezone.localdate', return_value=hoy):
+            cuentas = self.api.get('/api/cuentas/').data
+        return next(c for c in cuentas if c['nombre'] == 'Visa')
+
+    def test_estado_de_cuenta(self):
+        visa = self.estado()
+        self.assertEqual(visa['balance_actual'], 280_000)
+        e = visa['estado_tarjeta']
+        self.assertEqual(e['ultimo_corte'], '2026-09-15')
+        self.assertEqual(e['fecha_limite'], '2026-09-30')
+        self.assertEqual(e['proximo_corte'], '2026-10-15')
+        self.assertEqual(e['saldo_al_corte'], 300_000)
+        self.assertEqual(e['por_pagar'], 180_000)          # 300 del extracto − 120 abonados
+        self.assertEqual(e['compras_del_ciclo'], 100_000)  # se pagan el otro mes
+        self.assertEqual(e['cupo_disponible'], 720_000)
+        self.assertEqual(e['dias_para_pagar'], 6)
+        self.assertEqual(e['situacion'], 'pendiente')
+
+    def test_vencida_y_al_dia(self):
+        self.assertEqual(self.estado(date(2026, 10, 5))['estado_tarjeta']['situacion'], 'vencida')
+        Transaccion.objects.create(usuario=self.ana, nombre='Pago', monto=180_000, tipo='transferencia',
+                                   fecha=date(2026, 9, 25), cuenta_origen=self.debito, cuenta_destino=self.visa)
+        e = self.estado(date(2026, 10, 5))['estado_tarjeta']
+        self.assertEqual((e['por_pagar'], e['situacion']), (0, 'al_dia'))
+
+    def test_pagar_tarjeta_no_es_gasto(self):
+        with patch('core.views.timezone.localdate', return_value=self.HOY):
+            r = self.api.get('/api/transacciones/resumen-mes/').data
+        self.assertEqual(r['gastos'], 400_000)             # las compras sí; el pago no
+        debito = next(c for c in self.api.get('/api/cuentas/').data if c['nombre'] == 'Débito')
+        self.assertEqual(debito['balance_actual'], 880_000)
+
+    def test_transferencia_valida_cuentas(self):
+        base = {'nombre': 'x', 'monto': 1, 'tipo': 'transferencia', 'fecha': '2026-09-01'}
+        self.assertEqual(self.api.post('/api/transacciones/', {**base, 'cuenta_origen': self.debito.id},
+                                       format='json').status_code, 400)
+        self.assertEqual(self.api.post('/api/transacciones/', {**base, 'cuenta_origen': self.debito.id,
+                                       'cuenta_destino': self.debito.id}, format='json').status_code, 400)
+
+    def test_tarjeta_exige_dias(self):
+        r = self.api.post('/api/cuentas/', {'nombre': 'MC', 'tipo': 'credito'}, format='json')
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('dia_corte', r.data)
+        r = self.api.post('/api/cuentas/', {'nombre': 'Ahorros', 'tipo': 'activo', 'dia_corte': 5}, format='json')
+        self.assertIsNone(r.data['dia_corte'])
+
+    def test_corte_fin_de_mes(self):
+        from .tarjetas import siguiente_fecha, ultimo_corte
+        self.assertEqual(ultimo_corte(date(2026, 3, 10), 31), date(2026, 2, 28))
+        self.assertEqual(siguiente_fecha(date(2026, 2, 28), 31), date(2026, 3, 31))
+        self.assertEqual(ultimo_corte(date(2026, 9, 15), 15), date(2026, 8, 15))  # el día del corte sigue abierto
+
+    def test_una_consulta_extra_para_todas_las_tarjetas(self):
+        Cuenta.objects.create(usuario=self.ana, nombre='Master', tipo='credito', dia_corte=5, dia_pago=20)
+        with CaptureQueriesContext(connection) as q:
+            self.api.get('/api/cuentas/')
+        self.assertEqual(len(q), 2)

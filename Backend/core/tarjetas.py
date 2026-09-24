@@ -1,0 +1,100 @@
+# Estado de cuenta de las tarjetas de crédito: corte, fecha límite y cuánto pagar
+import calendar
+from datetime import date
+
+from django.db.models import Q
+from django.utils import timezone
+
+from .models import Transaccion
+
+
+def _dia(anio, mes, dia):
+    """El día pedido o el último del mes si no existe (corte el 31 en febrero → 28/29)."""
+    return date(anio, mes, min(dia, calendar.monthrange(anio, mes)[1]))
+
+
+def _mes_siguiente(anio, mes):
+    return (anio + 1, 1) if mes == 12 else (anio, mes + 1)
+
+
+def _mes_anterior(anio, mes):
+    return (anio - 1, 12) if mes == 1 else (anio, mes - 1)
+
+
+def ultimo_corte(hoy, dia_corte):
+    """Último corte ya cerrado. El día del corte todavía pertenece al ciclo abierto."""
+    c = _dia(hoy.year, hoy.month, dia_corte)
+    if c >= hoy:
+        c = _dia(*_mes_anterior(hoy.year, hoy.month), dia_corte)
+    return c
+
+
+def siguiente_fecha(despues_de, dia):
+    """Primera fecha posterior a `despues_de` que cae en `dia` del mes."""
+    f = _dia(despues_de.year, despues_de.month, dia)
+    if f <= despues_de:
+        f = _dia(*_mes_siguiente(despues_de.year, despues_de.month), dia)
+    return f
+
+
+def estados_tarjetas(cuentas, hoy):
+    """
+    Calcula el estado de todas las tarjetas con UNA consulta.
+    Solo se leen los movimientos posteriores al último corte (un ciclo), y el saldo
+    al corte se deduce del saldo actual: saldo_al_corte = deuda − (compras − abonos) del ciclo.
+    """
+    tarjetas = [c for c in cuentas if c.tipo == 'credito' and c.dia_corte and c.dia_pago]
+    if not tarjetas:
+        return {}
+
+    cortes = {t.id: ultimo_corte(hoy, t.dia_corte) for t in tarjetas}
+    ids = list(cortes)
+    movs = Transaccion.objects.filter(
+        Q(cuenta_origen_id__in=ids) | Q(cuenta_destino_id__in=ids),
+        fecha__gt=min(cortes.values()),
+    ).values_list('cuenta_origen_id', 'cuenta_destino_id', 'fecha', 'monto')
+
+    compras = dict.fromkeys(ids, 0)   # cargos a la tarjeta en el ciclo abierto
+    abonos = dict.fromkeys(ids, 0)    # pagos o devoluciones en el ciclo abierto
+    for origen, destino, fecha, monto in movs:
+        if origen in cortes and fecha > cortes[origen]:
+            compras[origen] += monto
+        if destino in cortes and fecha > cortes[destino]:
+            abonos[destino] += monto
+
+    estados = {}
+    for t in tarjetas:
+        corte = cortes[t.id]
+        deuda = t.balance_actual
+        limite = siguiente_fecha(corte, t.dia_pago)
+        siguiente = siguiente_fecha(corte, t.dia_corte)
+
+        saldo_al_corte = deuda - compras[t.id] + abonos[t.id]
+        # Tarjeta registrada después de la fecha límite: su deuda inicial no puede ser
+        # un extracto vencido que no conocemos; entra al próximo corte.
+        if t.creada_en and timezone.localtime(t.creada_en).date() > limite:
+            saldo_al_corte = 0
+        # Lo abonado después del corte descuenta primero lo que venía del extracto
+        por_pagar = max(0, saldo_al_corte - abonos[t.id])
+
+        if por_pagar == 0:
+            situacion = 'al_dia'
+        elif limite < hoy:
+            situacion = 'vencida'
+        else:
+            situacion = 'pendiente'
+
+        estados[t.id] = {
+            'deuda': deuda,
+            'cupo_disponible': (t.cupo - max(deuda, 0)) if t.cupo is not None else None,
+            'ultimo_corte': corte.isoformat(),
+            'proximo_corte': siguiente.isoformat(),
+            'fecha_limite': limite.isoformat(),
+            'dias_para_pagar': (limite - hoy).days,
+            'saldo_al_corte': max(saldo_al_corte, 0),
+            'por_pagar': por_pagar,
+            'compras_del_ciclo': compras[t.id],
+            'abonos_del_ciclo': abonos[t.id],
+            'situacion': situacion,
+        }
+    return estados

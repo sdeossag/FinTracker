@@ -33,7 +33,10 @@ class Cuenta(models.Model):
     TIPOS = [
         ('activo', 'Activo'),
         ('pasivo', 'Pasivo'),
+        ('credito', 'Tarjeta de crédito'),
     ]
+    # Tipos cuyo saldo es plata que se debe
+    TIPOS_DEUDA = ('pasivo', 'credito')
 
     usuario = models.ForeignKey(
         User,
@@ -46,6 +49,11 @@ class Cuenta(models.Model):
     color_hex = models.CharField(max_length=7, default='#3A86FF')
     activa = models.BooleanField(default=True)
     creada_en = models.DateTimeField(auto_now_add=True)
+
+    # Solo tarjetas de crédito
+    cupo = models.BigIntegerField(null=True, blank=True)
+    dia_corte = models.PositiveSmallIntegerField(null=True, blank=True)  # 1-31
+    dia_pago = models.PositiveSmallIntegerField(null=True, blank=True)   # 1-31, fecha límite
 
     class Meta:
         ordering = ['nombre']
@@ -62,7 +70,7 @@ class Cuenta(models.Model):
         Activo: lo que tienes (entra suma, sale resta).
         Pasivo: lo que debes (cargar a la deuda suma, abonarle resta).
         """
-        if tipo == 'pasivo':
+        if tipo in Cuenta.TIPOS_DEUDA:
             return inicial + salidas - entradas
         return inicial + entradas - salidas
 
@@ -120,6 +128,9 @@ class Transaccion(models.Model):
         ('gasto', 'Gasto'),
         ('ingreso', 'Ingreso'),
         ('ahorro', 'Ahorro'),
+        # Mover plata entre cuentas propias, p. ej. pagar la tarjeta.
+        # No es gasto ni ingreso: el gasto ya se contó al comprar con la tarjeta.
+        ('transferencia', 'Transferencia'),
     ]
 
     # Dueño directo: no depende de las cuentas (si se borra una cuenta,

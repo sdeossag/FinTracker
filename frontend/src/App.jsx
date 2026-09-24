@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { useLayoutEffect } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigationType } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import './index.css'
 
@@ -24,6 +25,11 @@ const SIN_NAV = ['/login', '/registro', '/biometria', '/onboarding', '/nueva', '
 
 function AppContent() {
   const location = useLocation()
+  const tipoNavegacion = useNavigationType()
+  // Una pantalla nueva arranca arriba; al volver atrás se respeta donde estaba
+  useLayoutEffect(() => {
+    if (tipoNavegacion !== 'POP') window.scrollTo(0, 0)
+  }, [location.key, tipoNavegacion])
   const sinNav = SIN_NAV.some(r => location.pathname === r || location.pathname.startsWith(r + '/'))
 
   return (

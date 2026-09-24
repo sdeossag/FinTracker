@@ -141,7 +141,7 @@ function PasoCuenta({ onSiguiente, onSaltar }) {
   return (
     <div>
       <Cabecera icono="banco" color="#0A84FF" titulo="Tu primera cuenta"
-        texto="Puede ser tu banco, efectivo, una tarjeta o una deuda. Después podrás crear más." />
+        texto="Puede ser tu banco, Nequi o efectivo. Tus tarjetas de crédito las agregas luego en Cuentas." />
 
       <div className="campo">
         <label className="label" htmlFor="ob-cuenta">Nombre</label>
@@ -153,7 +153,7 @@ function PasoCuenta({ onSiguiente, onSaltar }) {
         <p className="label">Tipo</p>
         <div role="radiogroup" aria-label="Tipo de cuenta" style={{ display: 'flex', gap: 8 }}>
           <OpcionTipo activa={form.tipo === 'activo'} titulo="Activo" hint="Dinero que tienes" onClick={() => setForm(f => ({ ...f, tipo: 'activo' }))} />
-          <OpcionTipo activa={form.tipo === 'pasivo'} titulo="Pasivo" hint="Deuda o crédito" onClick={() => setForm(f => ({ ...f, tipo: 'pasivo' }))} />
+          <OpcionTipo activa={form.tipo === 'pasivo'} titulo="Pasivo" hint="Préstamo o deuda" onClick={() => setForm(f => ({ ...f, tipo: 'pasivo' }))} />
         </div>
       </div>
 

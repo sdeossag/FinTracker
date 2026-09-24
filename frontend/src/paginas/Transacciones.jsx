@@ -37,8 +37,18 @@ const TIPOS = [
 
 const POR_PAGINA = 60
 
-const TIPO_COLOR ={ gasto: 'var(--gasto)', ingreso: 'var(--ingreso)', ahorro: 'var(--ahorro)' }
-const TIPO_SIGNO = { gasto: '−', ingreso: '+', ahorro: '' }
+const TIPO_COLOR = { gasto: 'var(--gasto)', ingreso: 'var(--ingreso)', ahorro: 'var(--ahorro)', transferencia: 'var(--texto-primario)' }
+const TIPO_SIGNO = { gasto: '−', ingreso: '+', ahorro: '', transferencia: '' }
+
+// Subtítulo cuando no hay categorías: de dónde a dónde, o el tipo
+const detalleSinCategoria = (t) => {
+  if (t.tipo === 'transferencia') {
+    const ruta = [t.cuenta_origen_nombre, t.cuenta_destino_nombre].filter(Boolean).join(' → ')
+    const esPago = t.cuenta_destino_tipo === 'credito' || t.cuenta_destino_tipo === 'pasivo'
+    return [esPago ? 'Pago de deuda' : 'Transferencia', ruta].filter(Boolean).join(' · ')
+  }
+  return capitalizar(t.tipo)
+}
 
 /* ── Panel de filtros ─────────────────────────────────── */
 function FiltrosPanel({ open, onClose, filtroTipo, setFiltroTipo, filtroMes, setFiltroMes, meses }) {
@@ -335,7 +345,11 @@ export default function Transacciones() {
                             </span>
                           ))}
                           {cats.length > 2 && <span className="texto-mini">+{cats.length - 2}</span>}
-                          {cats.length === 0 && <span className="texto-mini" style={{ textTransform: 'capitalize' }}>{t.tipo}</span>}
+                          {cats.length === 0 && (
+                            <span className="texto-mini" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {detalleSinCategoria(t)}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <span className="cifra" style={{ fontSize: 16, fontWeight: 600, color: TIPO_COLOR[t.tipo], flexShrink: 0 }}>

@@ -2,9 +2,24 @@
 import { Link } from 'react-router-dom'
 import Icono from './Icono'
 import { CampoMonto, Segmentado } from './Controles'
-import { COLOR_TIPO, TIPOS_TRANSACCION, conTipo } from '../utils/transaccion'
+import { COLOR_TIPO, TIPOS_TRANSACCION, conTipo, usaDestino, usaOrigen } from '../utils/transaccion'
+import { esDeuda } from '../utils/cuentas'
 
-export default function TransaccionForm({ form, onCambio, cuentas, categorias, errores = {}, autoFocusMonto = false }) {
+// [origen, destino] según el tipo
+const ETIQUETA_CUENTA = {
+  gasto: ['Pagado con', null],
+  ingreso: [null, 'Cuenta'],
+  ahorro: ['Sale de', 'Entra a'],
+  transferencia: ['Desde', 'Hacia'],
+}
+
+const GRUPOS_CUENTA = [
+  { etiqueta: 'Cuentas', tipos: ['activo'] },
+  { etiqueta: 'Tarjetas de crédito', tipos: ['credito'] },
+  { etiqueta: 'Deudas', tipos: ['pasivo'] },
+]
+
+export default function TransaccionForm({ form, onCambio, cuentas, categorias, errores = {}, autoFocusMonto = false, cargando = false }) {
   const set = (campo) => (e) => onCambio({ [campo]: e.target.value })
   const categoriasTipo = categorias.filter(c => c.tipo === form.tipo)
   const color = COLOR_TIPO[form.tipo]
@@ -15,23 +30,48 @@ export default function TransaccionForm({ form, onCambio, cuentas, categorias, e
       : [...form.categorias, id],
   })
 
-  const selectorCuenta = (campo, etiqueta) => (
-    <div className="campo">
-      <label className="label" htmlFor={campo}>{etiqueta}</label>
-      <select
-        id={campo}
-        className="input"
-        value={form[campo]}
-        onChange={set(campo)}
-        aria-invalid={!!errores[campo] || undefined}
-        aria-describedby={errores[campo] ? `${campo}-error` : undefined}
-      >
-        <option value="">Seleccionar cuenta…</option>
-        {cuentas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-      </select>
-      {errores[campo] && <p id={`${campo}-error`} className="campo-error">{errores[campo]}</p>}
-    </div>
-  )
+  // Con tarjetas o deudas, el selector agrupa para que se vea qué es cada cuenta
+  const grupos = GRUPOS_CUENTA
+    .map(g => ({ ...g, lista: cuentas.filter(c => g.tipos.includes(c.tipo)) }))
+    .filter(g => g.lista.length > 0)
+  const opcion = c => <option key={c.id} value={c.id}>{c.nombre}</option>
+
+  const cuentaDe = (campo) => cuentas.find(c => String(c.id) === String(form[campo]))
+  const ayudaCuenta = (campo) => {
+    const c = cuentaDe(campo)
+    if (!c) return null
+    if (campo === 'cuenta_origen' && form.tipo === 'gasto' && c.tipo === 'credito') {
+      return 'Queda como deuda en la tarjeta. Cuando la pagues, registra una transferencia.'
+    }
+    if (campo === 'cuenta_destino' && form.tipo === 'transferencia' && esDeuda(c.tipo)) {
+      return 'Pago de deuda: no cuenta como gasto, porque lo que compraste ya se contó.'
+    }
+    return null
+  }
+
+  const selectorCuenta = (campo, etiqueta) => {
+    const ayuda = !errores[campo] && ayudaCuenta(campo)
+    return (
+      <div className="campo">
+        <label className="label" htmlFor={campo}>{etiqueta}</label>
+        <select
+          id={campo}
+          className="input"
+          value={form[campo]}
+          onChange={set(campo)}
+          aria-invalid={!!errores[campo] || undefined}
+          aria-describedby={errores[campo] ? `${campo}-error` : ayuda ? `${campo}-ayuda` : undefined}
+        >
+          <option value="">Seleccionar cuenta…</option>
+          {grupos.length > 1
+            ? grupos.map(g => <optgroup key={g.etiqueta} label={g.etiqueta}>{g.lista.map(opcion)}</optgroup>)
+            : cuentas.map(opcion)}
+        </select>
+        {errores[campo] && <p id={`${campo}-error`} className="campo-error">{errores[campo]}</p>}
+        {ayuda && <p id={`${campo}-ayuda`} className="campo-ayuda">{ayuda}</p>}
+      </div>
+    )
+  }
 
   return (
     <>
@@ -60,7 +100,7 @@ export default function TransaccionForm({ form, onCambio, cuentas, categorias, e
         {errores.monto && <p id="monto-error" className="campo-error" style={{ textAlign: 'center' }}>{errores.monto}</p>}
       </div>
 
-      {cuentas.length === 0 && (
+      {!cargando && cuentas.length === 0 && (
         <div className="card" style={{ padding: '14px 16px', marginBottom: 18, display: 'flex', gap: 12, alignItems: 'center' }}>
           <span style={{ color: 'var(--acento)', display: 'flex' }}><Icono nombre="info" /></span>
           <p className="texto-nota" style={{ flex: 1 }}>Necesitas al menos una cuenta para registrar movimientos.</p>
@@ -89,10 +129,8 @@ export default function TransaccionForm({ form, onCambio, cuentas, categorias, e
         <input id="fecha" className="input" type="date" value={form.fecha} onChange={set('fecha')} />
       </div>
 
-      {(form.tipo === 'gasto' || form.tipo === 'ahorro') &&
-        selectorCuenta('cuenta_origen', form.tipo === 'ahorro' ? 'Sale de' : 'Cuenta')}
-      {(form.tipo === 'ingreso' || form.tipo === 'ahorro') &&
-        selectorCuenta('cuenta_destino', form.tipo === 'ahorro' ? 'Entra a' : 'Cuenta')}
+      {usaOrigen(form.tipo) && selectorCuenta('cuenta_origen', ETIQUETA_CUENTA[form.tipo][0])}
+      {usaDestino(form.tipo) && selectorCuenta('cuenta_destino', ETIQUETA_CUENTA[form.tipo][1])}
 
       {categoriasTipo.length > 0 && (
         <div className="campo">

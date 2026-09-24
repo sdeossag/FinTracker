@@ -765,3 +765,8 @@ select.input {
     --texto-terciario: #A1A1A6;
   }
 }
+
+/* Cuatro opciones en pantallas de 320px: "Transferir" cabe sin cortarse */
+@media (max-width: 360px) {
+  .segmented.lg .segmented-item { font-size: 0.8125rem; }
+}

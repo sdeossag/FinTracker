@@ -1,24 +1,30 @@
 // Pantalla de registro rápido de transacción — la más usada de la app
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import api, { ensureArray } from '../api'
 import Pagina from '../componentes/Pagina'
 import TransaccionForm from '../componentes/TransaccionForm'
-import { validarTransaccion } from '../utils/transaccion'
+import { TIPOS_TRANSACCION, validarTransaccion } from '../utils/transaccion'
 import { AvisoError } from '../componentes/Controles'
 import { fechaLocalISO, formatCOP, vibrar } from '../utils/formato'
 
-const formVacio = () => ({
-  nombre: '',
-  monto: '',
-  tipo: 'gasto',
-  fecha: fechaLocalISO(),
-  cuenta_origen: '',
-  cuenta_destino: '',
-  categorias: [],
-  notas: '',
-})
+// Acepta datos precargados por la URL, p. ej. el botón "Pagar" de una tarjeta:
+// /nueva?tipo=transferencia&destino=7&monto=180000&nombre=Pago%20Visa
+const formInicial = (params) => {
+  const tipo = params.get('tipo')
+  const monto = params.get('monto')
+  return {
+    nombre: params.get('nombre') || '',
+    monto: /^\d+$/.test(monto || '') ? monto : '',
+    tipo: TIPOS_TRANSACCION.some(t => t.valor === tipo) ? tipo : 'gasto',
+    fecha: fechaLocalISO(),
+    cuenta_origen: params.get('origen') || '',
+    cuenta_destino: params.get('destino') || '',
+    categorias: [],
+    notas: '',
+  }
+}
 
 // Solo se llena el campo que usa el tipo (un ahorro necesita dos cuentas distintas)
 const cuentaUnica = (tipo, id) => ({
@@ -28,8 +34,11 @@ const cuentaUnica = (tipo, id) => ({
 
 export default function NuevaTransaccion() {
   const navigate = useNavigate()
-  const [form, setForm] = useState(formVacio)
+  const [params] = useSearchParams()
+  const [form, setForm] = useState(() => formInicial(params))
+  const precargado = params.has('tipo')
   const [cuentas, setCuentas] = useState([])
+  const [cargando, setCargando] = useState(true)
   const [categorias, setCategorias] = useState([])
   const [guardando, setGuardando] = useState(false)
   const [errores, setErrores] = useState({})
@@ -47,8 +56,14 @@ export default function NuevaTransaccion() {
         setCategorias(ensureArray(resCat.data))
         // Con una sola cuenta, ya está elegida
         if (ctas.length === 1) setForm(f => ({ ...f, ...cuentaUnica(f.tipo, String(ctas[0].id)) }))
+        // Pagando una deuda con una sola cuenta de dinero: esa es el origen
+        const activos = ctas.filter(c => c.tipo === 'activo')
+        setForm(f => (f.tipo === 'transferencia' && !f.cuenta_origen && activos.length === 1
+          ? { ...f, cuenta_origen: String(activos[0].id) } : f))
       } catch (err) {
         console.error('Error cargando datos:', err)
+      } finally {
+        setCargando(false)
       }
     }
     cargar()
@@ -87,7 +102,9 @@ export default function NuevaTransaccion() {
       })
       vibrar()
       toast.success('Transacción registrada', { description: `${form.nombre.trim()} · ${formatCOP(form.monto)}` })
-      navigate('/transacciones')
+      // Desde el botón Pagar se vuelve a la tarjeta; si no, al historial
+      if (precargado && window.history.state?.idx > 0) navigate(-1)
+      else navigate('/transacciones')
     } catch (err) {
       console.error('Error guardando transacción:', err)
       setErrorServidor('No se pudo guardar. Revisa tu conexión e intenta de nuevo.')
@@ -105,14 +122,15 @@ export default function NuevaTransaccion() {
           cuentas={cuentas}
           categorias={categorias}
           errores={errores}
-          autoFocusMonto
+          autoFocusMonto={!precargado}
+          cargando={cargando}
         />
 
         <AvisoError>{errorServidor}</AvisoError>
 
         <div className="barra-accion">
           <button type="submit" className="btn-primario" disabled={guardando}>
-            {guardando ? 'Guardando…' : 'Registrar transacción'}
+            {guardando ? 'Guardando…' : form.tipo === 'transferencia' ? 'Registrar transferencia' : 'Registrar transacción'}
           </button>
         </div>
       </form>

@@ -5,7 +5,7 @@ import Pagina from '../componentes/Pagina'
 import Icono, { TipoIcono } from '../componentes/Icono'
 import Sheet, { ConfirmarSheet } from '../componentes/Sheet'
 import { AvisoError, CampoMonto, EstadoVacio, Interruptor, Segmentado } from '../componentes/Controles'
-import { TIPOS_TRANSACCION } from '../utils/transaccion'
+import { TIPOS_TRANSACCION, usaDestino, usaDosCuentas, usaOrigen } from '../utils/transaccion'
 import { fechaLocalISO, formatCOP, vibrar } from '../utils/formato'
 
 const FRECUENCIAS = [
@@ -25,8 +25,8 @@ const DIAS_SEMANA = [
   { valor: 7, etiqueta: 'Domingo' },
 ]
 
-const TIPOS_COLOR = { gasto: 'var(--gasto)', ingreso: 'var(--ingreso)', ahorro: 'var(--ahorro)' }
-const TIPOS_SIGNO = { gasto: '−', ingreso: '+', ahorro: '' }
+const TIPOS_COLOR = { gasto: 'var(--gasto)', ingreso: 'var(--ingreso)', ahorro: 'var(--ahorro)', transferencia: 'var(--texto-primario)' }
+const TIPOS_SIGNO = { gasto: '−', ingreso: '+', ahorro: '', transferencia: '' }
 
 const formVacio = {
   nombre: '', monto: '', tipo: 'gasto', frecuencia: 'mensual',
@@ -129,10 +129,10 @@ export default function Recurrentes() {
   const guardar = async () => {
     if (!form.nombre.trim()) { setErrorForm('El nombre es obligatorio.'); return }
     if (!(parseInt(form.monto) > 0)) { setErrorForm('El monto debe ser mayor a 0.'); return }
-    if (form.tipo === 'gasto' && !form.cuenta_origen) { setErrorForm('Selecciona la cuenta de origen.'); return }
-    if (form.tipo === 'ingreso' && !form.cuenta_destino) { setErrorForm('Selecciona la cuenta de destino.'); return }
-    if (form.tipo === 'ahorro' && (!form.cuenta_origen || !form.cuenta_destino)) {
-      setErrorForm('Para ahorros necesitas cuenta origen y destino.'); return
+    if (usaOrigen(form.tipo) && !form.cuenta_origen) { setErrorForm('Selecciona de qué cuenta sale.'); return }
+    if (usaDestino(form.tipo) && !form.cuenta_destino) { setErrorForm('Selecciona a qué cuenta entra.'); return }
+    if (usaDosCuentas(form.tipo) && form.cuenta_origen === form.cuenta_destino) {
+      setErrorForm('La cuenta de origen y la de destino deben ser distintas.'); return
     }
     setErrorForm('')
     setGuardando(true)
@@ -405,18 +405,18 @@ export default function Recurrentes() {
           </div>
         )}
 
-        {(form.tipo === 'gasto' || form.tipo === 'ahorro') && (
+        {usaOrigen(form.tipo) && (
           <div className="campo">
-            <label className="label" htmlFor="rec-origen">{form.tipo === 'ahorro' ? 'Sale de' : 'Cuenta'}</label>
+            <label className="label" htmlFor="rec-origen">{usaDosCuentas(form.tipo) ? 'Sale de' : 'Cuenta'}</label>
             <select id="rec-origen" className="input" value={form.cuenta_origen} onChange={set('cuenta_origen')}>
               <option value="">Seleccionar cuenta…</option>
               {cuentas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
           </div>
         )}
-        {(form.tipo === 'ingreso' || form.tipo === 'ahorro') && (
+        {usaDestino(form.tipo) && (
           <div className="campo">
-            <label className="label" htmlFor="rec-destino">{form.tipo === 'ahorro' ? 'Entra a' : 'Cuenta'}</label>
+            <label className="label" htmlFor="rec-destino">{usaDosCuentas(form.tipo) ? 'Entra a' : 'Cuenta'}</label>
             <select id="rec-destino" className="input" value={form.cuenta_destino} onChange={set('cuenta_destino')}>
               <option value="">Seleccionar cuenta…</option>
               {cuentas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}

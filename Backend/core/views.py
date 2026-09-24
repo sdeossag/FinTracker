@@ -23,6 +23,7 @@ from webauthn import (
 from webauthn.helpers import bytes_to_base64url
 from webauthn.helpers.structs import PublicKeyCredentialDescriptor
 
+from .tarjetas import estados_tarjetas
 from .models import Cuenta, Categoria, Transaccion, TransaccionCategoria, TransaccionRecurrente, UserCredential, PerfilUsuario
 from .serializers import (
     CuentaSerializer,
@@ -111,6 +112,15 @@ class CuentaViewSet(viewsets.ModelViewSet):
             total_entradas=total('cuenta_destino'),
             total_salidas=total('cuenta_origen'),
         )
+
+    def list(self, request, *args, **kwargs):
+        cuentas = list(self.get_queryset())
+        # Estado de todas las tarjetas con una sola consulta extra
+        contexto = {
+            **self.get_serializer_context(),
+            'estados_tarjeta': estados_tarjetas(cuentas, timezone.localdate()),
+        }
+        return Response(CuentaSerializer(cuentas, many=True, context=contexto).data)
 
 
 class CategoriaViewSet(viewsets.ModelViewSet):

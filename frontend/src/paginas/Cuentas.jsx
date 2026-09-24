@@ -4,16 +4,20 @@ import api, { ensureArray } from '../api'
 import Pagina from '../componentes/Pagina'
 import Icono from '../componentes/Icono'
 import Sheet, { ConfirmarSheet } from '../componentes/Sheet'
+import TarjetaSheet from '../componentes/TarjetaSheet'
 import { AvisoError, CampoMonto, EstadoVacio, Segmentado, SelectorColor } from '../componentes/Controles'
 import { formatCOP } from '../utils/formato'
+import {
+  AYUDA_TIPO_CUENTA, COLOR_TONO, TIPOS_CUENTA, esDeuda, patrimonio, resumenTarjeta,
+} from '../utils/cuentas'
 
 const COLORES = ['#34C759', '#0A84FF', '#BF5AF2', '#FF9F0A', '#FFD60A', '#FF453A', '#64D2FF', '#FF375F']
-const cuentaVacia = { nombre: '', tipo: 'activo', balance_inicial: '', color_hex: '#0A84FF', _balance_actual_ref: 0, _balance_inicial_ref: 0 }
-
-const TIPOS_CUENTA = [
-  { valor: 'activo', etiqueta: 'Activo' },
-  { valor: 'pasivo', etiqueta: 'Pasivo' },
-]
+const cuentaVacia = {
+  nombre: '', tipo: 'activo', balance_inicial: '', color_hex: '#0A84FF',
+  cupo: '', dia_corte: '', dia_pago: '',
+  _balance_actual_ref: 0, _balance_inicial_ref: 0,
+}
+const DIAS = Array.from({ length: 31 }, (_, i) => i + 1)
 
 export default function Cuentas() {
   const [cuentas, setCuentas] = useState([])
@@ -26,6 +30,9 @@ export default function Cuentas() {
   const [errorForm, setErrorForm] = useState('')
   const [confirmAbierto, setConfirmAbierto] = useState(false)
   const [eliminando, setEliminando] = useState(false)
+  // La hoja de la tarjeta lee siempre la versión recién cargada
+  const [tarjetaId, setTarjetaId] = useState(null)
+  const tarjeta = cuentas.find(c => c.id === tarjetaId)
 
   const cargar = async () => {
     setErrorCarga('')
@@ -54,6 +61,9 @@ export default function Cuentas() {
       tipo: cuenta.tipo,
       balance_inicial: String(cuenta.balance_inicial),
       color_hex: cuenta.color_hex,
+      cupo: cuenta.cupo != null ? String(cuenta.cupo) : '',
+      dia_corte: cuenta.dia_corte ? String(cuenta.dia_corte) : '',
+      dia_pago: cuenta.dia_pago ? String(cuenta.dia_pago) : '',
       _balance_actual_ref: cuenta.balance_actual,
       _balance_inicial_ref: cuenta.balance_inicial,
       _balance_actual_editable: String(cuenta.balance_actual),
@@ -73,11 +83,15 @@ export default function Cuentas() {
       setErrorForm('El nombre de la cuenta es obligatorio.')
       return
     }
+    if (form.tipo === 'credito' && (!form.dia_corte || !form.dia_pago)) {
+      setErrorForm('Elige el día de corte y el día límite de pago. Están en tu extracto.')
+      return
+    }
     let balanceInicialFinal
     if (editandoId) {
       const balanceActualDeseado = parseInt(form._balance_actual_editable || '0')
       if (isNaN(balanceActualDeseado)) {
-        setErrorForm('El balance actual debe ser un número.')
+        setErrorForm('El saldo debe ser un número.')
         return
       }
       // Recalcula balance_inicial para que balance_actual sea el valor deseado
@@ -86,7 +100,7 @@ export default function Cuentas() {
     } else {
       balanceInicialFinal = parseInt(form.balance_inicial || '0')
       if (isNaN(balanceInicialFinal)) {
-        setErrorForm('El balance inicial debe ser un número.')
+        setErrorForm('El saldo debe ser un número.')
         return
       }
     }
@@ -99,6 +113,11 @@ export default function Cuentas() {
         tipo: form.tipo,
         balance_inicial: balanceInicialFinal,
         color_hex: form.color_hex,
+        ...(form.tipo === 'credito' ? {
+          cupo: form.cupo ? parseInt(form.cupo) : null,
+          dia_corte: parseInt(form.dia_corte),
+          dia_pago: parseInt(form.dia_pago),
+        } : {}),
       }
       if (editandoId) {
         await api.patch(`/cuentas/${editandoId}/`, datos)
@@ -107,18 +126,17 @@ export default function Cuentas() {
       }
       await cargar()
       cerrarModal()
-      toast.success(editandoId ? 'Cuenta actualizada' : 'Cuenta creada', { description: datos.nombre })
+      const tipoTexto = form.tipo === 'credito' ? 'Tarjeta' : 'Cuenta'
+      toast.success(editandoId ? `${tipoTexto} actualizada` : `${tipoTexto} creada`, { description: datos.nombre })
     } catch (err) {
       const detail = err.response?.data
-      if (detail?.nombre) {
-        setErrorForm(`Nombre: ${detail.nombre[0]}`)
-      } else if (detail?.non_field_errors) {
-        setErrorForm(detail.non_field_errors[0])
-      } else if (detail?.detail) {
-        setErrorForm(detail.detail)
-      } else {
-        setErrorForm('Error al guardar. Revisa que el nombre no esté repetido.')
-      }
+      const primero = (campo) => Array.isArray(detail?.[campo]) ? detail[campo][0] : null
+      setErrorForm(
+        (primero('nombre') && `Nombre: ${primero('nombre')}`)
+        || primero('dia_corte') || primero('dia_pago') || primero('cupo')
+        || primero('non_field_errors') || detail?.detail
+        || 'Error al guardar. Revisa que el nombre no esté repetido.',
+      )
     } finally {
       setGuardando(false)
     }
@@ -131,45 +149,61 @@ export default function Cuentas() {
       await api.delete(`/cuentas/${editandoId}/`)
       setConfirmAbierto(false)
       cerrarModal()
+      setTarjetaId(null)
       await cargar()
-      toast.success('Cuenta eliminada')
+      toast.success(form.tipo === 'credito' ? 'Tarjeta eliminada' : 'Cuenta eliminada')
     } catch {
       setConfirmAbierto(false)
-      toast.error('No se pudo eliminar la cuenta', { description: 'Revisa tu conexión e intenta de nuevo.' })
+      toast.error('No se pudo eliminar', { description: 'Revisa tu conexión e intenta de nuevo.' })
     } finally {
       setEliminando(false)
     }
   }
 
-  const activos = cuentas.filter(c => c.tipo !== 'pasivo')
-  const pasivos = cuentas.filter(c => c.tipo === 'pasivo')
-  const balanceTotal = cuentas.reduce((acc, c) =>
-    c.tipo === 'pasivo' ? acc - c.balance_actual : acc + c.balance_actual, 0)
+  const activos = cuentas.filter(c => c.tipo === 'activo')
+  const tarjetas = cuentas.filter(c => c.tipo === 'credito')
+  const deudas = cuentas.filter(c => c.tipo === 'pasivo')
+  const balanceTotal = patrimonio(cuentas)
+  const esTarjeta = form.tipo === 'credito'
 
-  const grupo = (titulo, lista) => lista.length > 0 && (
+  const fila = (cuenta) => {
+    const resumen = cuenta.tipo === 'credito' ? resumenTarjeta(cuenta.estado_tarjeta) : null
+    return (
+      <button
+        key={cuenta.id}
+        className="fila"
+        style={{ '--sangria': '64px' }}
+        onClick={() => cuenta.tipo === 'credito' ? setTarjetaId(cuenta.id) : abrirEditar(cuenta)}
+      >
+        <span className="mosaico" style={{ background: cuenta.color_hex + '26', color: cuenta.color_hex }}>
+          {cuenta.tipo === 'credito'
+            ? <Icono nombre="tarjeta" size={19} grosor={2} />
+            : <span style={{ width: 12, height: 12, borderRadius: '50%', background: cuenta.color_hex }} />}
+        </span>
+        <div className="fila-cuerpo">
+          <p className="fila-titulo" style={{ fontWeight: 500 }}>{cuenta.nombre}</p>
+          {resumen && <p className="fila-sub" style={{ color: COLOR_TONO[resumen.tono] }}>{resumen.texto}</p>}
+        </div>
+        <span className="cifra" style={{
+          fontWeight: 600, fontSize: 16, flexShrink: 0,
+          color: esDeuda(cuenta.tipo) && cuenta.balance_actual > 0 ? 'var(--gasto)' : 'var(--texto-primario)',
+        }}>
+          {formatCOP(cuenta.balance_actual)}
+        </span>
+        <span className="fila-chevron"><Icono nombre="chevron-right" size={16} grosor={2.2} /></span>
+      </button>
+    )
+  }
+
+  const grupo = (titulo, lista, nota) => lista.length > 0 && (
     <section style={{ marginBottom: 24 }}>
       <h2 className="seccion-label">{titulo}</h2>
-      <div className="lista-grupo">
-        {lista.map(cuenta => (
-          <button key={cuenta.id} className="fila" style={{ '--sangria': '64px' }} onClick={() => abrirEditar(cuenta)}>
-            <span className="mosaico" style={{ background: cuenta.color_hex + '26' }}>
-              <span style={{ width: 12, height: 12, borderRadius: '50%', background: cuenta.color_hex }} />
-            </span>
-            <div className="fila-cuerpo">
-              <p className="fila-titulo" style={{ fontWeight: 500 }}>{cuenta.nombre}</p>
-            </div>
-            <span className="cifra" style={{
-              fontWeight: 600, fontSize: 16, flexShrink: 0,
-              color: cuenta.tipo === 'pasivo' ? 'var(--gasto)' : 'var(--texto-primario)',
-            }}>
-              {formatCOP(cuenta.balance_actual)}
-            </span>
-            <span className="fila-chevron"><Icono nombre="chevron-right" size={16} grosor={2.2} /></span>
-          </button>
-        ))}
-      </div>
+      <div className="lista-grupo">{lista.map(fila)}</div>
+      {nota && <p className="campo-ayuda" style={{ marginLeft: 16 }}>{nota}</p>}
     </section>
   )
+
+  const porPagarTotal = tarjetas.reduce((s, t) => s + (t.estado_tarjeta?.por_pagar || 0), 0)
 
   return (
     <Pagina
@@ -207,35 +241,51 @@ export default function Cuentas() {
             <p className="texto-mini" style={{ marginTop: 6 }}>Lo que tienes menos lo que debes</p>
           </section>
 
-          {grupo('Activos', activos)}
-          {grupo('Pasivos', pasivos)}
+          {grupo('Cuentas', activos)}
+          {grupo('Tarjetas de crédito', tarjetas,
+            porPagarTotal > 0 ? `Este mes debes pagar ${formatCOP(porPagarTotal)} en total.` : null)}
+          {grupo('Deudas', deudas)}
         </div>
       )}
+
+      <TarjetaSheet
+        tarjeta={tarjeta}
+        abierto={!!tarjeta}
+        onCerrar={() => setTarjetaId(null)}
+        onEditar={() => tarjeta && abrirEditar(tarjeta)}
+      />
 
       {/* Crear / editar */}
       <Sheet
         abierto={modalAbierto}
         onCerrar={cerrarModal}
-        titulo={editandoId ? 'Editar cuenta' : 'Nueva cuenta'}
+        titulo={editandoId ? (esTarjeta ? 'Editar tarjeta' : 'Editar cuenta') : 'Nueva cuenta'}
         pie={
           <>
             <button onClick={guardar} className="btn-primario" disabled={guardando}>
-              {guardando ? 'Guardando…' : editandoId ? 'Guardar cambios' : 'Crear cuenta'}
+              {guardando ? 'Guardando…' : editandoId ? 'Guardar cambios' : esTarjeta ? 'Agregar tarjeta' : 'Crear cuenta'}
             </button>
             {editandoId && (
               <button className="btn-texto peligro" onClick={() => setConfirmAbierto(true)}>
-                Eliminar cuenta
+                {esTarjeta ? 'Eliminar tarjeta' : 'Eliminar cuenta'}
               </button>
             )}
           </>
         }
       >
         <div className="campo">
+          <p className="label">Tipo</p>
+          <Segmentado etiqueta="Tipo de cuenta" opciones={TIPOS_CUENTA} valor={form.tipo}
+            onChange={tipo => setForm({ ...form, tipo })} />
+          <p className="campo-ayuda">{AYUDA_TIPO_CUENTA[form.tipo]}</p>
+        </div>
+
+        <div className="campo">
           <label className="label" htmlFor="cuenta-nombre">Nombre</label>
           <input
             id="cuenta-nombre"
             className="input"
-            placeholder="Ej: Nequi, Efectivo, Bancolombia…"
+            placeholder={esTarjeta ? 'Ej: Visa Bancolombia' : 'Ej: Nequi, Efectivo, Bancolombia…'}
             value={form.nombre}
             onChange={e => setForm({ ...form, nombre: e.target.value })}
             autoCapitalize="words"
@@ -243,37 +293,58 @@ export default function Cuentas() {
           />
         </div>
 
-        <div className="campo">
-          <p className="label">Tipo</p>
-          <Segmentado etiqueta="Tipo de cuenta" opciones={TIPOS_CUENTA} valor={form.tipo}
-            onChange={tipo => setForm({ ...form, tipo })} />
-          <p className="campo-ayuda">
-            {form.tipo === 'activo'
-              ? 'Dinero que tienes: Nequi, efectivo, cuenta de ahorros.'
-              : 'Dinero que debes: tarjeta de crédito, préstamo.'}
-          </p>
-        </div>
+        {esTarjeta && (
+          <>
+            <div className="campo">
+              <label className="label" htmlFor="cuenta-cupo">Cupo total <span style={{ color: 'var(--texto-terciario)' }}>· opcional</span></label>
+              <CampoMonto id="cuenta-cupo" valor={form.cupo} onChange={v => setForm({ ...form, cupo: v })} />
+            </div>
+
+            <div className="campo">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+                <div>
+                  <label className="label" htmlFor="cuenta-corte">Día de corte</label>
+                  <select id="cuenta-corte" className="input" value={form.dia_corte}
+                    onChange={e => setForm({ ...form, dia_corte: e.target.value })}>
+                    <option value="">Elegir…</option>
+                    {DIAS.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="label" htmlFor="cuenta-pago">Pagar hasta el día</label>
+                  <select id="cuenta-pago" className="input" value={form.dia_pago}
+                    onChange={e => setForm({ ...form, dia_pago: e.target.value })}>
+                    <option value="">Elegir…</option>
+                    {DIAS.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+              </div>
+              <p className="campo-ayuda">Los dos aparecen en tu extracto. Con ellos calculamos cuánto pagar y te lo recordamos en Inicio.</p>
+            </div>
+          </>
+        )}
 
         {editandoId ? (
           <div className="campo">
-            <label className="label" htmlFor="cuenta-balance">Balance actual</label>
+            <label className="label" htmlFor="cuenta-balance">{esDeuda(form.tipo) ? 'Deuda actual' : 'Saldo actual'}</label>
             <CampoMonto
               id="cuenta-balance"
-              permitirNegativo
+              permitirNegativo={!esDeuda(form.tipo)}
               valor={form._balance_actual_editable}
               onChange={v => setForm({ ...form, _balance_actual_editable: v })}
             />
-            <p className="campo-ayuda">Ajústalo al saldo real si hay un error o un movimiento sin registrar.</p>
+            <p className="campo-ayuda">Ajústalo al valor real si hay un error o un movimiento sin registrar.</p>
           </div>
         ) : (
           <div className="campo">
-            <label className="label" htmlFor="cuenta-balance">Balance inicial</label>
+            <label className="label" htmlFor="cuenta-balance">{esDeuda(form.tipo) ? 'Lo que debes hoy' : 'Saldo actual'}</label>
             <CampoMonto
               id="cuenta-balance"
-              permitirNegativo
+              permitirNegativo={!esDeuda(form.tipo)}
               valor={form.balance_inicial}
               onChange={v => setForm({ ...form, balance_inicial: v })}
             />
+            {esTarjeta && <p className="campo-ayuda">Todo lo que debes en la tarjeta, incluidas las compras recientes.</p>}
           </div>
         )}
 
@@ -288,9 +359,9 @@ export default function Cuentas() {
       <ConfirmarSheet
         abierto={confirmAbierto}
         onCerrar={() => setConfirmAbierto(false)}
-        titulo="¿Eliminar cuenta?"
+        titulo={esTarjeta ? '¿Eliminar tarjeta?' : '¿Eliminar cuenta?'}
         mensaje={`"${form.nombre || 'Esta cuenta'}" se eliminará. Sus transacciones se conservan, pero quedarán sin cuenta asociada. No se puede deshacer.`}
-        textoConfirmar="Eliminar cuenta"
+        textoConfirmar={esTarjeta ? 'Eliminar tarjeta' : 'Eliminar cuenta'}
         onConfirmar={eliminar}
         cargando={eliminando}
       />
