@@ -696,13 +696,16 @@ class IngestaSMSView(APIView):
             return Response({'error': 'Token inválido.', 'mensaje': 'FinTracker: token inválido, genera uno nuevo.'},
                             status=status.HTTP_401_UNAUTHORIZED)
 
+        # Se marca antes de validar: así la app muestra que el atajo sí llamó,
+        # aunque haya mandado el SMS vacío (variable mal elegida en Atajos)
+        perfil.token_ingesta_usado = timezone.now()
+        perfil.save(update_fields=['token_ingesta_usado'])
+
         texto = str(request.data.get('texto', ''))[:1000]
         if not texto.strip():
             return Response({'error': 'El SMS llegó vacío.', 'mensaje': 'Conexión OK. Falta el texto del SMS.'},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        perfil.token_ingesta_usado = timezone.now()
-        perfil.save(update_fields=['token_ingesta_usado'])
         msg, nuevo = procesar_sms(perfil.usuario, str(request.data.get('remitente', '')), texto)
         return Response(
             {'estado': msg.estado, 'mensaje': resumen_para_atajo(msg), 'repetido': not nuevo},
