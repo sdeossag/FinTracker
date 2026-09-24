@@ -693,11 +693,13 @@ class IngestaSMSView(APIView):
             if len(token) >= 20 else None
         )
         if not perfil:
-            return Response({'error': 'Token inválido.'}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({'error': 'Token inválido.', 'mensaje': 'FinTracker: token inválido, genera uno nuevo.'},
+                            status=status.HTTP_401_UNAUTHORIZED)
 
         texto = str(request.data.get('texto', ''))[:1000]
         if not texto.strip():
-            return Response({'error': 'El SMS llegó vacío.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'El SMS llegó vacío.', 'mensaje': 'Conexión OK. Falta el texto del SMS.'},
+                            status=status.HTTP_400_BAD_REQUEST)
 
         perfil.token_ingesta_usado = timezone.now()
         perfil.save(update_fields=['token_ingesta_usado'])

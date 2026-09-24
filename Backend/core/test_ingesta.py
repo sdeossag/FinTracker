@@ -236,6 +236,14 @@ class IATests(TestCase):
         self.assertEqual(msg.estado, 'pendiente')
         self.assertEqual(Transaccion.objects.count(), 0)
 
+    @patch.dict('os.environ', {'GROQ_API_KEY': 'prueba'})
+    def test_error_de_groq_queda_por_revisar(self):
+        resp = MagicMock(ok=False, status_code=404, text='{"error": {"code": "model_not_found"}}')
+        with patch('core.ingesta.requests.post', return_value=resp), self.assertLogs('core.ingesta', 'WARNING') as logs:
+            msg = self.procesar()
+        self.assertEqual(msg.estado, 'pendiente')
+        self.assertIn('model_not_found', logs.output[0])
+
     @patch.dict('os.environ', {}, clear=True)
     def test_sin_clave_queda_por_revisar(self):
         msg = self.procesar()

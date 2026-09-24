@@ -21,7 +21,8 @@ from .models import Cuenta, MensajeBanco, Transaccion, TransaccionCategoria
 log = logging.getLogger(__name__)
 
 GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
-GROQ_MODELO = os.getenv('GROQ_MODEL', 'llama-3.1-8b-instant')
+# llama-3.1-8b-instant quedó solo para Enterprise (responde 404 en cuentas normales)
+GROQ_MODELO = os.getenv('GROQ_MODEL', 'openai/gpt-oss-20b')
 
 # Minutos en que un envío y un recibo del mismo monto se consideran la misma transferencia
 VENTANA_TRANSFERENCIA = timedelta(minutes=30)
@@ -152,6 +153,8 @@ def con_ia(texto):
             json={
                 'model': GROQ_MODELO,
                 'temperature': 0,
+                # Los gpt-oss razonan antes de responder: para leer un SMS basta con poco
+                **({'reasoning_effort': 'low'} if GROQ_MODELO.startswith('openai/gpt-oss') else {}),
                 'response_format': {'type': 'json_object'},
                 'messages': [
                     {'role': 'system', 'content': PROMPT_IA},
@@ -160,7 +163,10 @@ def con_ia(texto):
             },
             timeout=8,
         )
-        r.raise_for_status()
+        if not r.ok:
+            # El cuerpo dice el motivo real (modelo inexistente, clave inválida, límite…)
+            log.warning('Groq no respondió: %s %s', r.status_code, r.text[:300])
+            return None, 'No pude leer este SMS automáticamente.'
         datos = json.loads(r.json()['choices'][0]['message']['content'])
     except (requests.RequestException, KeyError, ValueError, TypeError) as e:
         log.warning('Groq no respondió: %s', e)
