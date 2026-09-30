@@ -4,7 +4,7 @@
 // Al cambiar VERSION_NOVEDADES la hoja vuelve a abrirse una vez.
 import api from '../api'
 
-export const VERSION_NOVEDADES = '2026-09-cuotas'
+export const VERSION_NOVEDADES = '2026-10-recordatorios'
 const CLAVE = 'ft_novedades_vistas'
 
 export const vistasEnEsteDispositivo = () => {

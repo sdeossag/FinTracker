@@ -12,6 +12,12 @@ const REMITENTES = [
   { banco: 'Bancolombia', numero: '85540' },
   { banco: 'Nequi', numero: '890706' },
 ]
+// Atajo compartido por iCloud: al instalarlo pide el token y queda listo.
+// Se configura en Vercel (VITE_ATAJO_URL); sin él se muestran los pasos para armarlo a mano.
+const URL_ATAJO = import.meta.env.VITE_ATAJO_URL || ''
+// Video corto de cómo crear la automatización (.mp4 en /public o un enlace)
+const VIDEO_ATAJO = import.meta.env.VITE_ATAJO_VIDEO || ''
+const esVideoPropio = /\.(mp4|mov|webm)$/i.test(VIDEO_ATAJO)
 const TIPO_TEXTO = { gasto: 'Gasto', ingreso: 'Ingreso', transferencia: 'Transferencia', ahorro: 'Ahorro' }
 
 const hace = (iso) => {
@@ -115,36 +121,34 @@ export default function AtajoSheet({ abierto, onCerrar }) {
           </button>
         )}
 
+        {VIDEO_ATAJO && <VideoTutorial />}
+
         <h3 className="seccion-label" style={{ paddingLeft: 4 }}>Configura el atajo</h3>
-        <ol className="pasos">
-          <li>Abre <b>Atajos</b> → <b>Automatización</b> → <b>+</b> → <b>Mensaje</b>.</li>
-          <li>
-            En <b>Remitente</b> elige el número del banco. Si no aparece, guárdalo primero como contacto:
-            <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-              {REMITENTES.map(r => (
-                <button key={r.numero} type="button" className="chip" onClick={() => copiar(r.numero, `Número de ${r.banco}`)}
-                  style={{ minHeight: 32 }}>
-                  {r.banco} · <span className="cifra">{r.numero}</span>
-                </button>
-              ))}
-            </span>
-          </li>
-          <li>Marca <b>Ejecutar inmediatamente</b> (sin confirmar).</li>
-          <li>
-            Agrega la acción <b>Obtener contenido de URL</b> (Get Contents of URL): pega la URL, método <b>POST</b>, encabezado{' '}
-            <code>X-Token-Ingesta</code> con tu token, y cuerpo <b>JSON</b> con dos campos:{' '}
-            <code>remitente</code> = el número del banco (escrito) y <code>texto</code> = la variable{' '}
-            <b>Entrada del atajo</b> (Shortcut Input).
-            <span style={{ display: 'block', marginTop: 6, color: 'var(--ahorro)' }}>
-              No la escribas: en el campo vacío tócala en la barra sobre el teclado (o en Select Variable). Debe quedar como una burbuja de color.
-            </span>
-          </li>
-          <li>
-            Opcional, para ver qué se registró: agrega <b>Obtener valor del diccionario</b> (Get Dictionary Value) con clave{' '}
-            <code>mensaje</code> sobre <i>Contenido de la URL</i>, y luego <b>Mostrar notificación</b> (Show Notification) con ese valor.
-          </li>
-          <li>Repite con Nequi si también lo usas.</li>
-        </ol>
+        {URL_ATAJO ? (
+          <>
+            <ol className="pasos">
+              <li>Genera tu token arriba y cópialo.</li>
+              <li>
+                Instala el atajo <b>FinTracker SMS</b> y toca <b>Agregar atajo</b>. Cuando te pida el token, pégalo.
+                <a className="btn-tinte" href={URL_ATAJO} target="_blank" rel="noopener noreferrer"
+                  style={{ marginTop: 10, textDecoration: 'none' }}>
+                  <Icono nombre="descargar" size={17} /> Instalar atajo
+                </a>
+              </li>
+              <li>
+                Crea la automatización: <b>Atajos</b> → <b>Automatización</b> → <b>+</b> → <b>Mensaje</b>. En{' '}
+                <b>Remitente</b> elige el número de tu banco:
+                <Remitentes />
+              </li>
+              <li>Marca <b>Ejecutar inmediatamente</b>, toca <b>Siguiente</b> y elige <b>FinTracker SMS</b>.</li>
+              <li>Repite los pasos 3 y 4 con cada banco que uses.</li>
+            </ol>
+            <details className="detalles-manual">
+              <summary>Prefiero armarlo a mano</summary>
+              <PasosManuales />
+            </details>
+          </>
+        ) : <PasosManuales />}
         <p className="campo-ayuda" style={{ marginBottom: 22 }}>
           Para saber de qué cuenta es cada SMS, escribe en cada cuenta los últimos dígitos que salen en los mensajes (Cuentas → editar).
           Si llega uno que no reconozco, queda en <b>Por revisar</b> y ahí lo asignas.
@@ -168,6 +172,70 @@ export default function AtajoSheet({ abierto, onCerrar }) {
         onConfirmar={desconectar}
       />
     </>
+  )
+}
+
+// Números de los bancos: tocarlos los copia (para guardarlos como contacto si no aparecen)
+function Remitentes() {
+  return (
+    <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+      {REMITENTES.map(r => (
+        <button key={r.numero} type="button" className="chip" onClick={() => copiar(r.numero, `Número de ${r.banco}`)}
+          style={{ minHeight: 32 }}>
+          {r.banco} · <span className="cifra">{r.numero}</span>
+        </button>
+      ))}
+    </span>
+  )
+}
+
+function PasosManuales() {
+  return (
+    <ol className="pasos">
+      <li>Abre <b>Atajos</b> → <b>Automatización</b> → <b>+</b> → <b>Mensaje</b>.</li>
+      <li>
+        En <b>Remitente</b> elige el número del banco. Si no aparece, guárdalo primero como contacto:
+        <Remitentes />
+      </li>
+      <li>Marca <b>Ejecutar inmediatamente</b> (sin confirmar).</li>
+      <li>
+        Agrega la acción <b>Obtener contenido de URL</b> (Get Contents of URL): pega la URL, método <b>POST</b>, encabezado{' '}
+        <code>X-Token-Ingesta</code> con tu token, y cuerpo <b>JSON</b> con el campo{' '}
+        <code>texto</code> = la variable <b>Entrada del atajo</b> (Shortcut Input).
+        <span style={{ display: 'block', marginTop: 6, color: 'var(--ahorro)' }}>
+          No la escribas: en el campo vacío tócala en la barra sobre el teclado (o en Select Variable). Debe quedar como una burbuja de color.
+        </span>
+      </li>
+      <li>
+        Opcional, para ver qué se registró: agrega <b>Obtener valor del diccionario</b> (Get Dictionary Value) con clave{' '}
+        <code>mensaje</code> sobre <i>Contenido de la URL</i>, y luego <b>Mostrar notificación</b> (Show Notification) con ese valor.
+      </li>
+      <li>Repite con Nequi si también lo usas.</li>
+    </ol>
+  )
+}
+
+// Video corto (≈1 min) de cómo crear la automatización
+function VideoTutorial() {
+  if (!esVideoPropio) {
+    return (
+      <a className="btn-secundario" href={VIDEO_ATAJO} target="_blank" rel="noopener noreferrer"
+        style={{ marginBottom: 22, textDecoration: 'none' }}>
+        <Icono nombre="play" size={17} /> Ver el video paso a paso
+      </a>
+    )
+  }
+  return (
+    <section aria-label="Video paso a paso" style={{ marginBottom: 22 }}>
+      <video
+        src={VIDEO_ATAJO}
+        controls
+        playsInline
+        preload="metadata"
+        style={{ width: '100%', maxHeight: '60vh', borderRadius: 16, background: '#000', display: 'block' }}
+      />
+      <p className="campo-ayuda">Un minuto: así se instala el atajo y se crea la automatización.</p>
+    </section>
   )
 }
 

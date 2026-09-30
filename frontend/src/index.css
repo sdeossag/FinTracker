@@ -852,6 +852,33 @@ select.input {
   align-items: center;
   justify-content: center;
 }
+/* Pasos a mano: plegados bajo el atajo compartido */
+.detalles-manual { margin: 4px 0 14px; }
+.detalles-manual summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 4px;
+  color: var(--acento);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+.detalles-manual summary::-webkit-details-marker { display: none; }
+.detalles-manual summary::after {
+  content: '';
+  width: 7px;
+  height: 7px;
+  margin-left: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 200ms var(--ease-out);
+}
+.detalles-manual[open] summary::after { transform: translateY(2px) rotate(-135deg); }
+.detalles-manual[open] summary { margin-bottom: 8px; }
+
 .pasos code, .sms-texto {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.8125rem;

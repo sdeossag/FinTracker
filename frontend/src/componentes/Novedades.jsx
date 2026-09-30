@@ -9,31 +9,26 @@ import Sheet from './Sheet'
 import Icono from './Icono'
 import { hayNovedades, marcarNovedadesVistas } from '../utils/novedades'
 
+const HAY_ATAJO = !!import.meta.env.VITE_ATAJO_URL
+
 const NOVEDADES = [
-  { icono: 'calendario', color: '#FF9F0A', titulo: 'Compras a cuotas',
-    texto: 'Al pagar con tarjeta de crédito eliges en cuántas cuotas. Cada mes solo cuenta la cuota: la tarjeta te muestra cuánto va y cuánto falta de cada compra.' },
-  { icono: 'objetivo', color: '#30D158', titulo: 'Puedes gastar hoy',
-    texto: 'En Inicio ves cuánto puedes gastar hoy y por día hasta tu próximo sueldo, ya descontando tarjetas y pagos que vienen. Tócalo para ver el cálculo.' },
-  { icono: 'tarjeta', color: '#BF5AF2', titulo: 'Tarjetas de crédito',
-    texto: 'Agrega tu tarjeta con el día de corte y de pago. Te decimos cuánto pagar y hasta cuándo, y te avisamos en Inicio cuando se acerca la fecha.' },
-  { icono: 'transferencia', color: '#0A84FF', titulo: 'Pagar la tarjeta no es un gasto',
-    texto: 'Nuevo tipo "Transferir" para mover plata entre tus cuentas. Pagar la tarjeta ya no cuenta doble: el gasto se contó cuando compraste.' },
-  { icono: 'mensaje', color: '#30D158', titulo: 'Tus compras se anotan solas',
-    texto: 'Conecta un atajo del iPhone y cada SMS de Bancolombia o Nequi se registra solo, con su categoría. Configuración → Registrar desde SMS del banco.' },
-  { icono: 'bandeja', color: '#FF9F0A', titulo: 'Por revisar',
-    texto: 'Si llega un SMS de una tarjeta que no conozco, te pregunto una sola vez de qué cuenta es y desde ahí entra solo.' },
-  { icono: 'search', color: '#64D2FF', titulo: 'Historial más rápido',
-    texto: 'Carga al instante aunque tengas años de movimientos, y la búsqueda encuentra cualquiera, no solo los recientes.' },
-  { icono: 'lapiz', color: '#FF375F', titulo: 'Registrar es más cómodo',
-    texto: 'Nueva pantalla para crear y editar movimientos: Cancelar y Guardar siempre a mano, y los datos en una lista como en Ajustes.' },
+  { icono: 'campana', color: '#FF453A', titulo: 'Recordatorios de tus tarjetas',
+    texto: 'Te avisamos un día antes del corte, cuando cierra el extracto y antes de que venza el pago, aunque tengas la app cerrada. Actívalos en Configuración → Notificaciones.' },
+  { icono: 'etiqueta', color: '#FF9F0A', titulo: 'Categorías más inteligentes',
+    texto: 'Los SMS toman la categoría que ya usaste aunque el banco escriba el comercio distinto: "EXITO CALLE 80" es tu mismo Éxito. Si el comercio es nuevo, te sugerimos una de tus categorías.' },
+  { icono: 'candado', color: '#30D158', titulo: 'Tu cuenta, más protegida',
+    texto: 'Tras 5 intentos fallidos la cuenta se bloquea 15 minutos. Las contraseñas nuevas llevan mayúscula, número y símbolo, y al cambiarla se cierra tu sesión en los demás dispositivos.' },
+  ...(HAY_ATAJO ? [{ icono: 'mensaje', color: '#0A84FF', titulo: 'El atajo, en un toque',
+    texto: 'Ya no tienes que armarlo: instálalo desde Configuración → Registrar desde SMS del banco, pega tu token y crea la automatización.' }] : []),
+  { icono: 'mapa', color: '#64D2FF', titulo: 'Recorrido por la app',
+    texto: '¿Quieres ver todo lo que puede hacer FinTracker? Está en Configuración → Ayuda.' },
 ]
 
 const NOTAS = [
-  'La sesión ya no se cierra sola cada rato: te mantiene adentro 30 días mientras uses la app.',
-  'Los saldos de deudas se corrigieron: lo que debes ahora resta de tu patrimonio, como debe ser.',
-  'Si tenías una tarjeta guardada como "Pasivo", edítala en Cuentas y cámbiala a "Tarjeta" con sus fechas.',
-  'En iPhone, borra FinTracker de la pantalla de inicio y agrégalo de nuevo desde Safari: así ves el ícono nuevo y la app ocupa toda la pantalla, sin la franja negra de abajo.',
-  'La barra de abajo ya no se descuadra y se esconde cuando escribes.'
+  'Quitamos "Puedes gastar hoy": el aviso de pago de tus tarjetas en Inicio ya te dice lo importante.',
+  'Al entrar, tu usuario ya no distingue mayúsculas de minúsculas.',
+  'Al cerrar sesión borramos de este teléfono los datos que la app guardaba para funcionar sin conexión.',
+  'Tu contraseña actual sigue sirviendo; las reglas nuevas aplican cuando la cambies.',
 ]
 
 export default function Novedades() {

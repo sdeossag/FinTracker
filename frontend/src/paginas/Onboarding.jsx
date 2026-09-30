@@ -12,10 +12,13 @@ import { marcarNovedadesVistas } from '../utils/novedades'
 const COLORES = ['#0A84FF', '#30D158', '#FF453A', '#FFD60A', '#BF5AF2', '#FF9F0A', '#5AC8FA', '#FF375F']
 
 const TOUR = [
-  { icono: 'inicio', color: '#0A84FF', titulo: 'Inicio', desc: 'Tu balance total y el resumen del mes: ingresos, gastos y ahorros de un vistazo.' },
-  { icono: 'lista', color: '#30D158', titulo: 'Historial', desc: 'Todas tus transacciones. Filtra por tipo o mes, o busca cualquier movimiento.' },
-  { icono: 'objetivo', color: '#FF9F0A', titulo: 'Presupuesto', desc: 'Límites de gasto por categoría y cuánto llevas gastado en tiempo real.' },
-  { icono: 'ajustes', color: '#8E8E93', titulo: 'Configuración', desc: 'Cambia tu contraseña, vincula Face ID o huella y ajusta el período del presupuesto.' },
+  { icono: 'inicio', color: '#0A84FF', titulo: 'Inicio', desc: 'Tu balance total, el resumen del mes y los avisos importantes: pagos de tarjeta que se acercan y SMS por revisar.' },
+  { icono: 'tarjeta', color: '#BF5AF2', titulo: 'Cuentas y tarjetas', desc: 'Con el día de corte y de pago, cada tarjeta te dice cuánto pagar y hasta cuándo, y cuánto falta de cada compra a cuotas.' },
+  { icono: 'mensaje', color: '#30D158', titulo: 'Se anotan solas', desc: 'Con el atajo del iPhone, cada SMS de Bancolombia o Nequi se registra con su categoría. Aprende de ti, aunque el banco escriba el comercio distinto.' },
+  { icono: 'campana', color: '#FF453A', titulo: 'Recordatorios', desc: 'Te avisamos antes del corte y del pago de tus tarjetas, aunque tengas la app cerrada.' },
+  { icono: 'lista', color: '#64D2FF', titulo: 'Historial', desc: 'Todos tus movimientos. Busca cualquiera o filtra por tipo y mes.' },
+  { icono: 'objetivo', color: '#FF9F0A', titulo: 'Presupuesto', desc: 'Límites de gasto por categoría y cuánto llevas en tiempo real.' },
+  { icono: 'candado', color: '#8E8E93', titulo: 'Tu cuenta, protegida', desc: 'Entra con Face ID o huella. Tras varios intentos fallidos la cuenta se bloquea un rato.' },
 ]
 
 function Cabecera({ icono, color, titulo, texto }) {
@@ -72,9 +75,9 @@ function OpcionTipo({ activa, titulo, hint, onClick }) {
 // ── PASO 1: Bienvenida ────────────────────────────────────────────────────────
 function PasoBienvenida({ username, onSiguiente, onSaltar }) {
   const props = [
-    { icono: 'tarjeta', color: '#0A84FF', titulo: 'Tus cuentas', desc: 'Bancos, efectivo, deudas — todo en un lugar.' },
-    { icono: 'objetivo', color: '#FF9F0A', titulo: 'Presupuestos', desc: 'Define límites y ve cuánto llevas en cada categoría.' },
-    { icono: 'search', color: '#30D158', titulo: 'Historial claro', desc: 'Busca y filtra por mes y tipo de movimiento.' },
+    { icono: 'tarjeta', color: '#0A84FF', titulo: 'Cuentas y tarjetas', desc: 'Bancos, Nequi, efectivo y tarjetas de crédito, todo en un lugar.' },
+    { icono: 'mensaje', color: '#30D158', titulo: 'Tus compras se anotan solas', desc: 'Desde los SMS del banco, con un atajo del iPhone.' },
+    { icono: 'campana', color: '#FF453A', titulo: 'Nunca pagues tarde', desc: 'Recordatorios del corte y del pago de tus tarjetas.' },
   ]
 
   return (
@@ -255,7 +258,7 @@ function PasoCategoria({ onSiguiente, onSaltar }) {
 }
 
 // ── PASO 4: Tour de la app ────────────────────────────────────────────────────
-function PasoTour({ onSiguiente }) {
+function PasoTour({ onSiguiente, textoBoton = 'Continuar' }) {
   return (
     <div>
       <Cabecera icono="mapa" color="#30D158" titulo="Conoce tu app"
@@ -275,7 +278,7 @@ function PasoTour({ onSiguiente }) {
         ))}
       </div>
 
-      <button onClick={onSiguiente} className="btn-primario">Continuar</button>
+      <button onClick={onSiguiente} className="btn-primario">{textoBoton}</button>
     </div>
   )
 }
@@ -290,8 +293,9 @@ function PasoListo({ username, onEntrar }) {
       <div className="lista-grupo" style={{ marginBottom: 32 }}>
         {[
           ['plus', 'Toca + para una nueva transacción'],
-          ['tarjeta', 'Gestiona tus cuentas en la pestaña Cuentas'],
-          ['objetivo', 'Define presupuestos por categoría'],
+          ['tarjeta', 'Agrega tus tarjetas con su corte y pago en Cuentas'],
+          ['mensaje', 'Conecta el atajo de SMS en Configuración'],
+          ['campana', 'Activa los recordatorios en Configuración'],
           ['face-id', 'Vincula Face ID desde Configuración'],
         ].map(([icono, texto], i) => (
           <div key={i} className="fila" style={{ '--sangria': '52px', minHeight: 48 }}>
@@ -330,7 +334,9 @@ function ProgressDots({ total, actual }) {
 export default function Onboarding() {
   const navigate = useNavigate()
   const reducir = useReducedMotion()
-  const [paso, setPaso] = useState(0)
+  // Desde Configuración (?recorrido) se abre directo en el recorrido
+  const soloRecorrido = new URLSearchParams(window.location.search).has('recorrido')
+  const [paso, setPaso] = useState(soloRecorrido ? 3 : 0)
   const [direccion, setDireccion] = useState(1)
   const [username, setUsername] = useState('')
 
@@ -358,7 +364,7 @@ export default function Onboarding() {
       case 0: return <PasoBienvenida username={username} onSiguiente={siguiente} onSaltar={terminar} />
       case 1: return <PasoCuenta onSiguiente={siguiente} onSaltar={saltar} />
       case 2: return <PasoCategoria onSiguiente={siguiente} onSaltar={saltar} />
-      case 3: return <PasoTour onSiguiente={siguiente} />
+      case 3: return <PasoTour onSiguiente={soloRecorrido ? () => navigate(-1) : siguiente} textoBoton={soloRecorrido ? 'Listo' : 'Continuar'} />
       case 4: return <PasoListo username={username} onEntrar={terminar} />
       default: return null
     }
@@ -382,14 +388,14 @@ export default function Onboarding() {
     }}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', minHeight: 44, marginBottom: 20 }}>
         <div>
-          {paso > 0 && (
+          {paso > 0 && !soloRecorrido && (
             <button className="btn-atras" onClick={() => irA(paso - 1)} aria-label="Paso anterior" style={{ marginLeft: -8 }}>
               <Icono nombre="chevron-left" size={24} grosor={2.2} />
               Atrás
             </button>
           )}
         </div>
-        <ProgressDots total={TOTAL_PASOS} actual={paso} />
+        {soloRecorrido ? <span /> : <ProgressDots total={TOTAL_PASOS} actual={paso} />}
         <div />
       </div>
 

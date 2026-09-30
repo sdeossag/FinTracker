@@ -246,6 +246,16 @@ export default function Configuracion() {
         }[notif.estado] ?? 'Te avisamos un día antes del corte, cuando cierra el extracto y 3 días, 1 día y el día del pago. Aunque tengas la app cerrada.'}
       </p>
 
+      {/* Ayuda */}
+      <h2 className="seccion-label">Ayuda</h2>
+      <div className="lista-grupo" style={{ marginBottom: 32 }}>
+        <button className="fila" style={{ '--sangria': '58px', minHeight: 48 }} onClick={() => navigate('/onboarding?recorrido')}>
+          <Mosaico icono="mapa" color="#0A84FF" />
+          <span className="fila-cuerpo fila-titulo">Recorrido por la app</span>
+          <span className="fila-chevron"><Icono nombre="chevron-right" size={16} grosor={2.2} /></span>
+        </button>
+      </div>
+
       {/* Sesión */}
       <div className="lista-grupo">
         <button className="fila" onClick={logout} style={{ justifyContent: 'center', minHeight: 50 }}>
