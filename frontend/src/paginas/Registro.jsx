@@ -2,9 +2,10 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import api from '../api'
 import Marca from '../componentes/Marca'
-import { AvisoError } from '../componentes/Controles'
+import { AvisoError, ReglasPassword } from '../componentes/Controles'
 import './Acceso.css'
 import { marcarNovedadesVistas } from '../utils/novedades'
+import { emailValido, errorUsuario, normalizarUsuario, passwordValida } from '../utils/cuentaUsuario'
 
 export default function Registro() {
   const navigate = useNavigate()
@@ -13,11 +14,17 @@ export default function Registro() {
   const [exito, setExito] = useState(false)
   const [cargando, setCargando] = useState(false)
 
-  const set = (campo) => (e) => setForm({ ...form, [campo]: e.target.value })
+  const [tocado, setTocado] = useState({})
 
-  // Validación en línea, no solo al enviar
-  const passCorta = form.password.length > 0 && form.password.length < 8
+  const set = (campo) => (e) => setForm({ ...form, [campo]: e.target.value })
+  const salir = (campo) => () => setTocado(t => ({ ...t, [campo]: true }))
+
+  // Validación en línea, no solo al enviar. Los errores salen al dejar el campo, no mientras escribes.
+  const usuarioMal = errorUsuario(form.username)
+  const emailMal = form.email.length > 0 && !emailValido(form.email.trim())
+  const passOk = passwordValida(form.password, form.username)
   const noCoinciden = form.confirm_password.length > 0 && form.password !== form.confirm_password
+  const listo = form.username && !usuarioMal && emailValido(form.email.trim()) && passOk && form.confirm_password && !noCoinciden
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -30,7 +37,7 @@ export default function Registro() {
 
     setCargando(true)
     try {
-      await api.post('/registro/', { ...form, username: form.username.trim(), email: form.email.trim() })
+      await api.post('/registro/', { ...form, email: form.email.trim() })
       marcarNovedadesVistas()   // cuenta nueva: no necesita ver qué cambió
       setExito(true)
     } catch (err) {
@@ -87,14 +94,21 @@ export default function Registro() {
               spellCheck={false}
               enterKeyHint="next"
               value={form.username}
-              onChange={set('username')}
+              onChange={e => setForm({ ...form, username: normalizarUsuario(e.target.value) })}
+              onBlur={salir('username')}
+              maxLength={30}
+              aria-invalid={(tocado.username && !!usuarioMal) || undefined}
+              aria-describedby="reg-usuario-ayuda"
               required
             />
+            <p id="reg-usuario-ayuda" className={tocado.username && usuarioMal ? 'campo-error' : 'campo-ayuda'}>
+              {tocado.username && usuarioMal ? usuarioMal : 'En minúsculas: letras, números, punto o guion bajo.'}
+            </p>
           </div>
 
           <div className="campo">
             <label className="label" htmlFor="reg-email">
-              Correo <span style={{ color: 'var(--texto-terciario)' }}>· opcional</span>
+              Correo
             </label>
             <input
               id="reg-email"
@@ -109,7 +123,12 @@ export default function Registro() {
               enterKeyHint="next"
               value={form.email}
               onChange={set('email')}
+              onBlur={salir('email')}
+              aria-invalid={(tocado.email && emailMal) || undefined}
+              aria-describedby={tocado.email && emailMal ? 'reg-email-error' : undefined}
+              required
             />
+            {tocado.email && emailMal && <p id="reg-email-error" className="campo-error">Escribe un correo válido.</p>}
           </div>
 
           <div className="campo">
@@ -118,18 +137,15 @@ export default function Registro() {
               id="reg-pass"
               className="input"
               type="password"
-              placeholder="Mínimo 8 caracteres"
+              placeholder="Crea una contraseña"
               autoComplete="new-password"
               enterKeyHint="next"
               value={form.password}
               onChange={set('password')}
-              aria-invalid={passCorta || undefined}
-              aria-describedby="reg-pass-ayuda"
+              aria-describedby="reg-pass-reglas"
               required
             />
-            <p id="reg-pass-ayuda" className={passCorta ? 'campo-error' : 'campo-ayuda'}>
-              Usa al menos 8 caracteres.
-            </p>
+            <ReglasPassword id="reg-pass-reglas" password={form.password} usuario={form.username} />
           </div>
 
           <div className="campo">
@@ -155,7 +171,7 @@ export default function Registro() {
           <button
             type="submit"
             className="btn-primario"
-            disabled={cargando || !form.username.trim() || form.password.length < 8 || noCoinciden || !form.confirm_password}
+            disabled={cargando || !listo}
             style={{ marginTop: 8 }}
           >
             {cargando ? 'Creando cuenta…' : 'Crear cuenta'}

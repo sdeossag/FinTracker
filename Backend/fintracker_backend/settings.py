@@ -100,6 +100,17 @@ CORS_ALLOW_CREDENTIALS = True
 
 CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
 
+# Cabeceras de seguridad. Render termina el HTTPS y avisa con X-Forwarded-Proto.
+X_FRAME_OPTIONS = 'DENY'
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = 'same-origin'
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_HSTS_SECONDS = 60 * 60 * 24 * 365
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -113,8 +124,8 @@ REST_FRAMEWORK = {
     ],
     'UNAUTHENTICATED_USER': None,
     'DEFAULT_PAGINATION_CLASS': None,
-    # El endpoint del atajo es público (con token propio): límite contra abusos
-    'DEFAULT_THROTTLE_RATES': {'ingesta': '120/hour'},
+    # Endpoints públicos: límite por IP contra abusos (el bloqueo por usuario va aparte)
+    'DEFAULT_THROTTLE_RATES': {'ingesta': '120/hour', 'login': '30/hour', 'registro': '10/hour'},
 }
 
 # Sesión: el acceso dura 1 hora y se renueva solo. El refresh dura 30 días y se

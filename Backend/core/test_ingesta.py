@@ -162,6 +162,48 @@ class IngestaTests(TestCase):
         nueva = Transaccion.objects.get(origen='sms')
         self.assertEqual(list(nueva.categorias.all()), [cafe])
 
+    def categoria_previa(self, nombre_comercio, categoria):
+        previa = Transaccion.objects.create(usuario=self.ana, nombre=nombre_comercio, monto=1, tipo='gasto',
+                                            fecha=HOY, cuenta_origen=self.banco)
+        TransaccionCategoria.objects.create(transaccion=previa, categoria=categoria)
+
+    def test_reconoce_el_comercio_aunque_cambie_el_nombre(self):
+        mercado = Categoria.objects.create(usuario=self.ana, nombre='Mercado', tipo='gasto')
+        cafe = Categoria.objects.create(usuario=self.ana, nombre='Café', tipo='gasto')
+        self.categoria_previa('Éxito Laureles', mercado)
+        self.categoria_previa('Juan Valdez Café', cafe)
+        casos = {
+            'EXITO COLOMBIA S.A.': [mercado],     # razón social y tildes
+            'EXITO CALLE 80': [mercado],          # otra sucursal
+            'JUAN VALDEZ CAFE 123': [cafe],
+            'CINE COLOMBIA': [],                  # nada que ver
+        }
+        from .ingesta import categorias_aprendidas
+        for comercio, esperado in casos.items():
+            ids = categorias_aprendidas(self.ana, limpiar_comercio(comercio), 'gasto')
+            self.assertEqual(ids, [c.id for c in esperado], comercio)
+
+    def test_el_nombre_exacto_gana_sobre_el_parecido(self):
+        mercado = Categoria.objects.create(usuario=self.ana, nombre='Mercado', tipo='gasto')
+        hogar = Categoria.objects.create(usuario=self.ana, nombre='Hogar', tipo='gasto')
+        self.categoria_previa('Exito Hogar', hogar)
+        self.categoria_previa('Exito', mercado)
+        self.categoria_previa('Exito Laureles', mercado)
+        from .ingesta import categorias_aprendidas
+        self.assertEqual(categorias_aprendidas(self.ana, 'Exito Hogar', 'gasto'), [hogar.id])
+
+    def test_comercio_nuevo_lo_clasifica_la_ia_entre_tus_categorias(self):
+        transporte = Categoria.objects.create(usuario=self.ana, nombre='Transporte', tipo='gasto')
+        Categoria.objects.create(usuario=self.ana, nombre='Mercado', tipo='gasto')
+        from .ingesta import categorias_aprendidas
+        with patch.dict('os.environ', {'GROQ_API_KEY': 'x'}), \
+             patch('core.ingesta.pedir_a_groq', return_value={'categoria': 'transporte'}):
+            self.assertEqual(categorias_aprendidas(self.ana, 'Didi', 'gasto'), [transporte.id])
+        # Si la IA inventa una categoría que no existe, no se usa
+        with patch.dict('os.environ', {'GROQ_API_KEY': 'x'}), \
+             patch('core.ingesta.pedir_a_groq', return_value={'categoria': 'Viajes'}):
+            self.assertEqual(categorias_aprendidas(self.ana, 'Didi', 'gasto'), [])
+
     def test_codigos_de_seguridad_no_se_guardan(self):
         with patch('core.ingesta.timezone.localdate', return_value=HOY):
             self.atajo.post('/api/ingesta/sms/', {'texto': 'Bancolombia: tu clave dinamica es 123456', 'remitente': '85540'},

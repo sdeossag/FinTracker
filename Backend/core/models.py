@@ -24,6 +24,8 @@ class PerfilUsuario(models.Model):
     token_ingesta_usado = models.DateTimeField(null=True, blank=True)
     # Última versión de "Novedades" que vio: se muestra una sola vez por cuenta, en cualquier dispositivo
     novedades_vistas = models.CharField(max_length=60, blank=True, default='')
+    # Al cambiar la contraseña: las sesiones abiertas antes de esta fecha ya no se renuevan
+    sesiones_desde = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name = 'Perfil de usuario'
@@ -31,6 +33,20 @@ class PerfilUsuario(models.Model):
 
     def __str__(self):
         return f'Perfil de {self.usuario.username}'
+
+
+class IntentoAcceso(models.Model):
+    """
+    Intentos fallidos de inicio de sesión por nombre de usuario (exista o no, para no
+    revelar qué cuentas existen). Tras varios seguidos, la cuenta se bloquea un rato.
+    """
+    usuario_clave = models.CharField(max_length=150, unique=True)
+    fallidos = models.PositiveSmallIntegerField(default=0)
+    bloqueado_hasta = models.DateTimeField(null=True, blank=True)
+    actualizado = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f'{self.usuario_clave}: {self.fallidos}'
 
 
 class Cuenta(models.Model):
@@ -64,9 +80,6 @@ class Cuenta(models.Model):
     # Cómo aparece la cuenta en los SMS del banco: últimos dígitos de tarjetas y cuentas,
     # o una palabra para billeteras sin número. Separados por espacio: "8174 5284", "nequi".
     terminaciones = models.CharField(max_length=120, blank=True, default='')
-
-    # ¿Cuenta como plata para gastar en "Puedes gastar hoy"? Las de ahorro, no.
-    incluir_en_disponible = models.BooleanField(default=True)
 
     class Meta:
         ordering = ['nombre']

@@ -1,6 +1,7 @@
 # URLs de la API de FinTracker
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from .seguridad import CambiarPasswordView, RegistroView
 from .views import (
     CuentaViewSet,
     CategoriaViewSet,
@@ -10,10 +11,7 @@ from .views import (
     WebAuthnAuthOptionsView, WebAuthnAuthVerifyView,
     WebAuthnCredentialsView,
     PerfilView,
-    CambiarPasswordView,
-    RegistroView,
     IngestaSMSView, TokenIngestaView, ProbarSMSView, MensajeBancoViewSet,
-    DisponibleView,
 )
 
 # El router genera automáticamente todos los endpoints CRUD
@@ -35,7 +33,6 @@ urlpatterns = [
     path('perfil/', PerfilView.as_view(), name='perfil'),
     path('cambiar-password/', CambiarPasswordView.as_view(), name='cambiar-password'),
     path('registro/', RegistroView.as_view(), name='registro'),
-    path('disponible/', DisponibleView.as_view(), name='disponible'),
     path('ingesta/sms/', IngestaSMSView.as_view(), name='ingesta-sms'),
     path('ingesta/token/', TokenIngestaView.as_view(), name='ingesta-token'),
     path('ingesta/probar/', ProbarSMSView.as_view(), name='ingesta-probar'),

@@ -26,8 +26,8 @@ from webauthn import (
 from webauthn.helpers import bytes_to_base64url
 from webauthn.helpers.structs import PublicKeyCredentialDescriptor
 
+from .seguridad import error_email, error_usuario
 from .tarjetas import estados_tarjetas
-from . import disponible
 from .ingesta import (
     billetera, entender, plan_de_registro, procesar_sms, reprocesar_pendientes, resumen_para_atajo,
 )
@@ -45,37 +45,6 @@ from .serializers import (
     WebAuthnRegistrationResponseSerializer,
     WebAuthnAuthResponseSerializer,
 )
-
-
-# Solo aplica a contraseñas nuevas; las actuales siguen funcionando
-MIN_PASSWORD = 8
-
-
-class RegistroView(APIView):
-    """Crea una nueva cuenta de usuario"""
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        from django.contrib.auth.models import User
-
-        username = request.data.get('username', '').strip()
-        email = request.data.get('email', '').strip()
-        password = request.data.get('password', '')
-        confirm = request.data.get('confirm_password', '')
-
-        if not username:
-            return Response({'error': 'El usuario es requerido.'}, status=status.HTTP_400_BAD_REQUEST)
-        if len(username) < 3:
-            return Response({'error': 'El usuario debe tener al menos 3 caracteres.'}, status=status.HTTP_400_BAD_REQUEST)
-        if User.objects.filter(username=username).exists():
-            return Response({'error': 'Ese nombre de usuario ya está en uso.'}, status=status.HTTP_400_BAD_REQUEST)
-        if len(password) < MIN_PASSWORD:
-            return Response({'error': f'La contraseña debe tener al menos {MIN_PASSWORD} caracteres.'}, status=status.HTTP_400_BAD_REQUEST)
-        if password != confirm:
-            return Response({'error': 'Las contraseñas no coinciden.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        user = User.objects.create_user(username=username, email=email, password=password)
-        return Response({'status': 'ok', 'username': user.username}, status=status.HTTP_201_CREATED)
 
 
 def rango_mes(anio, mes):
@@ -442,20 +411,24 @@ class PerfilView(APIView):
         })
 
     def patch(self, request):
-        from django.contrib.auth.models import User
         perfil, _ = PerfilUsuario.objects.get_or_create(usuario=request.user)
 
-        # Actualizar username / email si vienen en el body
-        nuevo_username = request.data.get('username', '').strip()
-        nuevo_email    = request.data.get('email', '').strip()
+        # Usuario y correo, con las mismas reglas del registro. Si el usuario no cambia
+        # no se revalida: las cuentas viejas conservan el suyo.
+        nuevo_username = str(request.data.get('username', '')).strip().lower()
         if nuevo_username:
-            if len(nuevo_username) < 3:
-                return Response({'error': 'El usuario debe tener al menos 3 caracteres.'}, status=status.HTTP_400_BAD_REQUEST)
-            if User.objects.filter(username=nuevo_username).exclude(pk=request.user.pk).exists():
-                return Response({'error': 'Ese nombre de usuario ya está en uso.'}, status=status.HTTP_400_BAD_REQUEST)
-            request.user.username = nuevo_username
-            request.user.email    = nuevo_email
-            request.user.save(update_fields=['username', 'email'])
+            nuevo_email = str(request.data.get('email', '')).strip().lower()
+            yo = request.user
+            cambia_usuario = nuevo_username != yo.username.lower()
+            motivo = error_usuario(nuevo_username, excluir=yo) if cambia_usuario else ''
+            if not motivo and nuevo_email != yo.email.lower():
+                motivo = error_email(nuevo_email, excluir=yo)
+            if motivo:
+                return Response({'error': motivo}, status=status.HTTP_400_BAD_REQUEST)
+            if cambia_usuario:
+                yo.username = nuevo_username
+            yo.email = nuevo_email
+            yo.save(update_fields=['username', 'email'])
 
         # Novedades vistas (versión)
         vistas = request.data.get('novedades_vistas')
@@ -481,24 +454,6 @@ class PerfilView(APIView):
             'periodo_inicio': perfil.periodo_inicio,
             'novedades_vistas': perfil.novedades_vistas,
         })
-
-
-class CambiarPasswordView(APIView):
-    """Cambia la contraseña del usuario autenticado"""
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        current = request.data.get('current_password', '')
-        nueva = request.data.get('new_password', '')
-
-        if not request.user.check_password(current):
-            return Response({'error': 'La contraseña actual es incorrecta.'}, status=status.HTTP_400_BAD_REQUEST)
-        if len(nueva) < MIN_PASSWORD:
-            return Response({'error': f'La nueva contraseña debe tener al menos {MIN_PASSWORD} caracteres.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        request.user.set_password(nueva)
-        request.user.save()
-        return Response({'status': 'ok'})
 
 
 class WebAuthnCredentialsView(APIView):
@@ -609,18 +564,17 @@ class WebAuthnRegisterVerifyView(APIView):
 
 class WebAuthnAuthOptionsView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
 
     def get(self, request):
         username = request.query_params.get('username')
         if not username:
             return Response({'error': 'Username required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            from django.contrib.auth.models import User
-            user = User.objects.get(username=username)
-            credentials = UserCredential.objects.filter(usuario=user)
-        except User.DoesNotExist:
-            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        from django.contrib.auth.models import User
+        user = User.objects.filter(username__iexact=username.strip()).first()
+        credentials = UserCredential.objects.filter(usuario=user) if user else []
 
         options = generate_authentication_options(
             rp_id=RP_ID,
@@ -629,6 +583,9 @@ class WebAuthnAuthOptionsView(APIView):
                 for c in credentials
             ],
         )
+        # Usuario inexistente: la misma respuesta, para no revelar qué cuentas existen
+        if not user:
+            return Response(json.loads(options_to_json(options)))
 
         perfil = _get_or_create_perfil(user)
         perfil.webauthn_challenge = bytes_to_base64url(options.challenge)
@@ -639,6 +596,8 @@ class WebAuthnAuthOptionsView(APIView):
 
 class WebAuthnAuthVerifyView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
 
     def post(self, request):
         try:
@@ -825,12 +784,3 @@ class MensajeBancoViewSet(viewsets.ReadOnlyModelViewSet):
             cuenta.save(update_fields=['terminaciones'])
         registrados = reprocesar_pendientes(request.user)
         return Response({'registrados': registrados, 'cuenta': cuenta.nombre, 'terminacion': ident})
-
-
-class DisponibleView(APIView):
-    """Cuánto puedes gastar hoy y por día hasta el próximo ingreso."""
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        cuentas = list(cuentas_con_saldo(request.user))
-        return Response(disponible.calcular(request.user, cuentas, timezone.localdate()))

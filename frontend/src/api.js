@@ -24,8 +24,20 @@ export const clearTokens = () => {
   localStorage.removeItem('refresh_token')
 }
 
-export const logout = () => {
+// Al salir no queda nada tuyo en el teléfono: ni la sesión ni las respuestas
+// de la API que el service worker guarda para usar la app sin conexión.
+export const borrarDatosLocales = async () => {
+  try {
+    if ('caches' in window) {
+      const nombres = await caches.keys()
+      await Promise.all(nombres.filter(n => n.includes('api')).map(n => caches.delete(n)))
+    }
+  } catch { /* sin caché: nada que borrar */ }
+}
+
+export const logout = async () => {
   clearTokens()
+  await borrarDatosLocales()
   window.location.href = '/login'
 }
 
@@ -68,7 +80,9 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config
-    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+    // Un 401 del propio login es "contraseña incorrecta", no una sesión vencida
+    const esLogin = originalRequest?.url?.startsWith('/token/')
+    if (error.response?.status === 401 && originalRequest && !originalRequest._retry && !esLogin) {
       originalRequest._retry = true
       try {
         const access = await renovarAcceso()
@@ -76,8 +90,7 @@ api.interceptors.response.use(
         return api(originalRequest)
       } catch (refreshError) {
         if (sesionRechazada(refreshError)) {
-          clearTokens()
-          window.location.href = '/login'
+          await logout()
         }
         return Promise.reject(refreshError)
       }
@@ -90,7 +103,7 @@ api.interceptors.response.use(
 export const webauthnApi = {
   getRegisterOptions: () => api.get('/webauthn/register-options/'),
   verifyRegister: (data) => api.post('/webauthn/register-verify/', data),
-  getAuthOptions: (username) => api.get(`/webauthn/auth-options/?username=${username}`),
+  getAuthOptions: (username) => api.get('/webauthn/auth-options/', { params: { username } }),
   verifyAuth: (data) => api.post('/webauthn/auth-verify/', data),
   getCredentials: () => api.get('/webauthn/credentials/'),
   updateCredential: (id, data) => api.patch(`/webauthn/credentials/${id}/`, data),

@@ -10,7 +10,6 @@ import Pagina from '../componentes/Pagina'
 import Icono from '../componentes/Icono'
 import { EstadoVacio } from '../componentes/Controles'
 import Marca from '../componentes/Marca'
-import Disponible from '../componentes/Disponible'
 import { capitalizar, formatCOP } from '../utils/formato'
 import {
   COLOR_TONO, esDeuda, fechaCorta, patrimonio, plazo, resumenTarjeta, rutaPagarTarjeta, tarjetasPorPagar,
@@ -25,7 +24,6 @@ export default function Inicio() {
   const [errorCarga, setErrorCarga] = useState(false)
   const [intento, setIntento] = useState(0)
   const [porRevisar, setPorRevisar] = useState(0)
-  const [disponible, setDisponible] = useState(null)
   const [notifEstado, setNotifEstado] = useState(() => estadoPermiso())
   const [notifActivas, setNotifActivas] = useState(() => notifHabilitadas())
 
@@ -33,12 +31,11 @@ export default function Inicio() {
     const cargarDatos = async () => {
       try {
         // allSettled: si el perfil o el resumen fallan, las cuentas igual se muestran
-        const [resCuentas, resResumen, resPerfil, resMensajes, resDisponible] = await Promise.allSettled([
+        const [resCuentas, resResumen, resPerfil, resMensajes] = await Promise.allSettled([
           api.get('/cuentas/'),
           api.get('/transacciones/resumen-mes/'),
           api.get('/perfil/'),
           api.get('/mensajes/', { params: { estado: 'pendiente' } }),
-          api.get('/disponible/'),
         ])
         if (resCuentas.status === 'rejected') { setErrorCarga(true); return }
         const ctas = ensureArray(resCuentas.value.data)
@@ -46,7 +43,6 @@ export default function Inicio() {
         if (resResumen.status === 'fulfilled') setResumen(ensureObject(resResumen.value.data))
         if (resPerfil.status === 'fulfilled') setUsername(resPerfil.value.data?.username || '')
         if (resMensajes.status === 'fulfilled') setPorRevisar(ensureArray(resMensajes.value.data).length)
-        if (resDisponible.status === 'fulfilled') setDisponible(resDisponible.value.data)
 
         const obKey = 'ft_ob_done'
         if (ctas.length === 0 && !localStorage.getItem(obKey)) {
@@ -209,9 +205,6 @@ export default function Inicio() {
               </div>
             </div>
           </section>
-
-          {/* ── Cuánto puedes gastar hoy ── */}
-          <Disponible datos={disponible} />
 
           {/* ── SMS que necesitan un dato ── */}
           {porRevisar > 0 && (

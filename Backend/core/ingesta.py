@@ -10,13 +10,14 @@ import json
 import logging
 import os
 import re
+import unicodedata
 from datetime import date, timedelta
 
 import requests
 from django.db import IntegrityError, transaction as db_transaction
 from django.utils import timezone
 
-from .models import Cuenta, MensajeBanco, Transaccion, TransaccionCategoria
+from .models import Categoria, Cuenta, MensajeBanco, Transaccion, TransaccionCategoria
 
 log = logging.getLogger(__name__)
 
@@ -142,10 +143,11 @@ PROMPT_IA = """Extrae el movimiento de este SMS de un banco colombiano. Responde
 Si es publicidad, un código o un aviso sin plata, es_movimiento=false."""
 
 
-def con_ia(texto):
+def pedir_a_groq(sistema, mensaje):
+    """Una pregunta con respuesta JSON. None si no hay clave o Groq falla."""
     clave = os.getenv('GROQ_API_KEY')
     if not clave:
-        return None, 'No reconocí este formato de SMS.'
+        return None
     try:
         r = requests.post(
             GROQ_URL,
@@ -157,8 +159,8 @@ def con_ia(texto):
                 **({'reasoning_effort': 'low'} if GROQ_MODELO.startswith('openai/gpt-oss') else {}),
                 'response_format': {'type': 'json_object'},
                 'messages': [
-                    {'role': 'system', 'content': PROMPT_IA},
-                    {'role': 'user', 'content': enmascarar(texto)},
+                    {'role': 'system', 'content': sistema},
+                    {'role': 'user', 'content': mensaje},
                 ],
             },
             timeout=8,
@@ -166,13 +168,19 @@ def con_ia(texto):
         if not r.ok:
             # El cuerpo dice el motivo real (modelo inexistente, clave inválida, límite…)
             log.warning('Groq no respondió: %s %s', r.status_code, r.text[:300])
-            return None, 'No pude leer este SMS automáticamente.'
+            return None
         datos = json.loads(r.json()['choices'][0]['message']['content'])
     except (requests.RequestException, KeyError, ValueError, TypeError) as e:
         log.warning('Groq no respondió: %s', e)
-        return None, 'No pude leer este SMS automáticamente.'
+        return None
+    return datos if isinstance(datos, dict) else None
 
-    if not isinstance(datos, dict):
+
+def con_ia(texto):
+    if not os.getenv('GROQ_API_KEY'):
+        return None, 'No reconocí este formato de SMS.'
+    datos = pedir_a_groq(PROMPT_IA, enmascarar(texto))
+    if datos is None:
         return None, 'No pude leer este SMS automáticamente.'
     if not datos.get('es_movimiento'):
         return {'clase': 'otro'}, 'No parece un movimiento de plata.'
@@ -224,13 +232,96 @@ def buscar_cuenta(cuentas, ident):
     return None
 
 
+# ── Categorías ──────────────────────────────────────────────────────
+
+# Palabras que no distinguen un comercio de otro: razón social, ciudad, sucursal…
+RELLENO = {
+    'a', 'al', 'y', 'de', 'del', 'la', 'el', 'los', 'las', 'en', 'the', 'por',
+    'colombia', 'col', 'co', 'sas', 'sa', 's', 'ltda', 'ltd', 'inc', 'cia', 'bic',
+    'bogota', 'medellin', 'cali', 'barranquilla', 'cartagena', 'bucaramanga', 'pereira', 'manizales',
+    'envigado', 'itagui', 'sabaneta', 'rionegro', 'bello', 'chia', 'cucuta', 'ibague', 'santa', 'marta',
+    'cll', 'calle', 'cra', 'carrera', 'kr', 'cr', 'av', 'avenida', 'diag', 'tv', 'cc', 'centro', 'comercial',
+    'sucursal', 'suc', 'local', 'piso', 'sede', 'tienda', 'almacen', 'store',
+    'www', 'com', 'net', 'online', 'pago', 'pagos', 'pse', 'compra',
+    'transferencia', 'recibida', 'enviada',
+}
+# Cuántas transacciones anteriores se revisan para aprender
+HISTORIA_CATEGORIAS = 500
+
+
+def sin_tildes(texto):
+    return ''.join(c for c in unicodedata.normalize('NFKD', texto) if not unicodedata.combining(c))
+
+
+def clave_comercio(nombre):
+    """
+    Lo que identifica al comercio, sin sucursal ni razón social:
+    'ÉXITO LAURELES' → ('exito', 'laureles') · 'Exito Colombia S.A.' → ('exito',) · 'Tienda D1 123' → ('d1',)
+    """
+    palabras = re.split(r'[^a-z0-9]+', sin_tildes(nombre or '').lower())
+    return tuple(p for p in palabras if p and p not in RELLENO and not p.isdigit())
+
+
+def parecido(a, b):
+    """
+    Qué tanto se parecen dos comercios: 3 = mismo nombre, 2 = mismo comercio en otra forma,
+    1 = misma primera palabra (otra sucursal o el mismo tipo de negocio), 0 = nada.
+    """
+    if not a or not b:
+        return 0
+    if a == b:
+        return 2
+    corto, largo = sorted((a, b), key=len)
+    if largo[:len(corto)] == corto:
+        return 2  # 'Exito' ⊂ 'Exito Laureles'
+    if a[0] == b[0] and len(a[0]) >= 4:
+        return 1
+    return 0
+
+
 def categorias_aprendidas(usuario, nombre, tipo):
-    """Las categorías de la última vez que registraste el mismo comercio."""
-    previa = (
-        Transaccion.objects.filter(usuario=usuario, tipo=tipo, nombre__iexact=nombre)
-        .exclude(transaccion_categorias=None).order_by('-fecha', '-id').first()
+    """
+    Las categorías de la última vez que registraste ese comercio, aunque el banco
+    lo escriba distinto (otra sucursal, con o sin 'S.A.S.', con tildes…).
+    """
+    clave = clave_comercio(nombre)
+    exacto = nombre.strip().lower()
+    previas = (
+        Transaccion.objects.filter(usuario=usuario, tipo=tipo)
+        .exclude(transaccion_categorias=None)
+        .order_by('-fecha', '-id').values_list('id', 'nombre')[:HISTORIA_CATEGORIAS]
     )
-    return list(previa.transaccion_categorias.values_list('categoria_id', flat=True)) if previa else []
+    mejor, puntaje = None, 0
+    for id_, previo in previas:  # de la más reciente a la más vieja: gana la última
+        p = 3 if previo.strip().lower() == exacto else parecido(clave, clave_comercio(previo))
+        if p > puntaje:
+            mejor, puntaje = id_, p
+            if p == 3:
+                break
+    if mejor:
+        return list(TransaccionCategoria.objects.filter(transaccion_id=mejor, categoria__activa=True)
+                    .values_list('categoria_id', flat=True))
+    return categoria_con_ia(usuario, nombre, tipo)
+
+
+PROMPT_CATEGORIA = """Clasifica una compra hecha en Colombia en UNA de las categorías de la persona.
+Responde SOLO un JSON: {"categoria": "el nombre exacto de la lista, o vacío si ninguna encaja con claridad"}"""
+
+
+def categoria_con_ia(usuario, nombre, tipo):
+    """Comercio nuevo: la IA elige entre las categorías que ya tienes (nunca inventa una)."""
+    if tipo != 'gasto' or not clave_comercio(nombre) or not os.getenv('GROQ_API_KEY'):
+        return []
+    categorias = dict(
+        (n.lower(), id_) for id_, n in
+        Categoria.objects.filter(usuario=usuario, tipo='gasto', activa=True).values_list('id', 'nombre')
+    )
+    if not categorias:
+        return []
+    lista = ', '.join(sorted(categorias))
+    datos = pedir_a_groq(PROMPT_CATEGORIA, f'Comercio: {nombre}\nCategorías: {lista}')
+    elegida = str((datos or {}).get('categoria') or '').strip().lower()
+    return [categorias[elegida]] if elegida in categorias else []
 
 
 # ── Registrar ───────────────────────────────────────────────────────

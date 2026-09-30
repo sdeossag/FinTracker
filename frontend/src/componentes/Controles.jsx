@@ -3,6 +3,7 @@
 import { useRef } from 'react'
 import Icono from './Icono'
 import { formatMiles, limpiarMonto } from '../utils/formato'
+import { REQUISITOS_PASSWORD } from '../utils/cuentaUsuario'
 
 /* ── Segmented control con indicador deslizante ─────── */
 export function Segmentado({ opciones, valor, onChange, etiqueta, grande = false }) {
@@ -165,6 +166,28 @@ export function EstadoVacio({ icono, titulo, texto, accion }) {
       {texto && <p>{texto}</p>}
       {accion}
     </div>
+  )
+}
+
+/* ── Requisitos de contraseña, marcados mientras escribes ── */
+export function ReglasPassword({ password, usuario = '', id }) {
+  const contieneUsuario = usuario.length >= 3 && password.toLowerCase().includes(usuario.toLowerCase())
+  return (
+    <ul id={id} className="reglas-password" aria-label="Requisitos de la contraseña">
+      {REQUISITOS_PASSWORD.map(r => {
+        const ok = r.cumple(password)
+        return (
+          <li key={r.id} data-ok={ok}>
+            <span className="regla-marca" aria-hidden="true">
+              {ok ? <Icono nombre="check" size={11} grosor={3} /> : null}
+            </span>
+            {r.texto}
+            <span className="sr-only">{ok ? ': listo' : ': falta'}</span>
+          </li>
+        )
+      })}
+      {contieneUsuario && <li data-error="true" role="alert">No puede contener tu usuario</li>}
+    </ul>
   )
 }
 

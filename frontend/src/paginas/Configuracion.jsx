@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import api, { logout } from '../api'
+import api, { logout, setTokens } from '../api'
+import { emailValido, errorUsuario, normalizarUsuario, passwordValida } from '../utils/cuentaUsuario'
 import {
   notifSoportadas, estadoPermiso, notifHabilitadas,
   pedirPermiso, activarNotif, desactivarNotif,
@@ -10,7 +11,7 @@ import Pagina from '../componentes/Pagina'
 import Icono from '../componentes/Icono'
 import Sheet from '../componentes/Sheet'
 import AtajoSheet from '../componentes/AtajoSheet'
-import { AvisoError, Interruptor, Segmentado } from '../componentes/Controles'
+import { AvisoError, Interruptor, ReglasPassword, Segmentado } from '../componentes/Controles'
 
 // Mosaico de color con glifo blanco, como en Ajustes de iOS
 function Mosaico({ icono, color }) {
@@ -66,13 +67,17 @@ export default function Configuracion() {
 
   const abrirPerfil = () => {
     setPerfilError('')
-    setPerfilForm({ username: perfil?.username ?? '', email: perfil?.email ?? '' })
+    setPerfilForm({ username: (perfil?.username ?? '').toLowerCase(), email: perfil?.email ?? '' })
     setEditandoPerfil(true)
   }
 
   const guardarPerfil = async () => {
     setPerfilError('')
-    if (!perfilForm.username.trim()) { setPerfilError('El nombre no puede estar vacío.'); return }
+    const usuario = perfilForm.username.trim()
+    if (!usuario) { setPerfilError('El nombre no puede estar vacío.'); return }
+    // Solo se revalida si lo cambiaste: los usuarios viejos se conservan
+    if (usuario !== perfil?.username?.toLowerCase() && errorUsuario(usuario)) { setPerfilError(errorUsuario(usuario)); return }
+    if (!emailValido(perfilForm.email.trim())) { setPerfilError('Escribe un correo válido.'); return }
     setGuardandoPerfil(true)
     try {
       const res = await api.patch('/perfil/', {
@@ -113,18 +118,20 @@ export default function Configuracion() {
   const cambiarPassword = async () => {
     setPassError('')
     if (!passForm.current) { setPassError('Escribe tu contraseña actual.'); return }
-    if (passForm.nueva.length < 8) { setPassError('La nueva contraseña debe tener al menos 8 caracteres.'); return }
+    if (!passwordValida(passForm.nueva, perfil?.username)) { setPassError('La nueva contraseña no cumple los requisitos.'); return }
     if (passForm.nueva !== passForm.confirmar) { setPassError('Las contraseñas nuevas no coinciden.'); return }
 
     setGuardandoPass(true)
     try {
-      await api.post('/cambiar-password/', {
+      const { data } = await api.post('/cambiar-password/', {
         current_password: passForm.current,
         new_password: passForm.nueva,
       })
+      // Este teléfono sigue adentro con la sesión nueva; los demás se cierran
+      if (data?.access) setTokens(data.access, data.refresh)
       setMostrarPassword(false)
       setPassForm({ current: '', nueva: '', confirmar: '' })
-      toast.success('Contraseña actualizada')
+      toast.success('Contraseña actualizada', { description: 'Cerramos tu sesión en los demás dispositivos.' })
     } catch (err) {
       setPassError(err.response?.data?.error ?? 'Error al cambiar la contraseña.')
     } finally {
@@ -257,11 +264,12 @@ export default function Configuracion() {
         <div className="campo">
           <label className="label" htmlFor="perfil-usuario">Nombre de usuario</label>
           <input id="perfil-usuario" className="input" value={perfilForm.username}
-            onChange={e => setPerfilForm(p => ({ ...p, username: e.target.value }))}
-            autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+            onChange={e => setPerfilForm(p => ({ ...p, username: normalizarUsuario(e.target.value) }))}
+            maxLength={30} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+          <p className="campo-ayuda">En minúsculas: letras, números, punto o guion bajo.</p>
         </div>
         <div className="campo">
-          <label className="label" htmlFor="perfil-email">Correo <span style={{ color: 'var(--texto-terciario)' }}>· opcional</span></label>
+          <label className="label" htmlFor="perfil-email">Correo</label>
           <input id="perfil-email" className="input" type="email" inputMode="email" value={perfilForm.email}
             onChange={e => setPerfilForm(p => ({ ...p, email: e.target.value }))}
             placeholder="tu@correo.com" autoComplete="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
@@ -289,8 +297,10 @@ export default function Configuracion() {
         </div>
         <div className="campo">
           <label className="label" htmlFor="pass-nueva">Nueva contraseña</label>
-          <input id="pass-nueva" className="input" type="password" autoComplete="new-password" placeholder="Mínimo 8 caracteres"
-            value={passForm.nueva} onChange={e => setPassForm(p => ({ ...p, nueva: e.target.value }))} />
+          <input id="pass-nueva" className="input" type="password" autoComplete="new-password"
+            value={passForm.nueva} onChange={e => setPassForm(p => ({ ...p, nueva: e.target.value }))}
+            aria-describedby="pass-reglas" />
+          <ReglasPassword id="pass-reglas" password={passForm.nueva} usuario={perfil?.username ?? ''} />
         </div>
         <div className="campo">
           <label className="label" htmlFor="pass-confirmar">Confirmar nueva contraseña</label>

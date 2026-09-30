@@ -458,6 +458,50 @@ select.input {
 }
 .aviso-error svg { flex-shrink: 0; margin-top: 1px; }
 
+/* Requisitos de contraseña: se van marcando mientras escribes */
+.reglas-password {
+  list-style: none;
+  margin: 10px 4px 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 12px;
+}
+.reglas-password li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  color: var(--texto-terciario);
+  transition: color 180ms ease;
+}
+.reglas-password li[data-ok="true"] { color: var(--texto-secundario); }
+.reglas-password li[data-error="true"] { grid-column: 1 / -1; color: var(--gasto); }
+.regla-marca {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 0 0 1.5px var(--texto-terciario);
+  color: #000;
+  transition: background-color 180ms ease, box-shadow 180ms ease, transform 180ms var(--ease-out);
+}
+[data-ok="true"] > .regla-marca {
+  background: var(--ingreso);
+  box-shadow: none;
+  transform: scale(1.06);
+}
+@media (max-width: 340px) {
+  .reglas-password { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-ok="true"] > .regla-marca { transform: none; }
+}
+
 /* Monto grande (pantalla de transacción) */
 .monto-grande {
   background: transparent;
@@ -938,15 +982,3 @@ textarea.campo-inline { resize: none; line-height: 1.4; min-height: 72px; }
   overscroll-behavior: contain;   /* el rebote queda dentro: la barra no se mueve */
   -webkit-overflow-scrolling: touch;
 }
-
-/* ── "Puedes gastar hoy" ─────────────────────── */
-.disponible {
-  display: block;
-  width: 100%;
-  text-align: left;
-  margin-bottom: 28px;
-  padding: 16px 18px 16px;
-  transition: transform 160ms var(--ease-out);
-}
-.disponible:active { transform: scale(0.985); }
-@media (prefers-reduced-motion: reduce) { .disponible:active { transform: none; } }

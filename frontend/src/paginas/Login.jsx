@@ -28,8 +28,10 @@ export default function Login() {
       setTokens(access, refresh)
       navigate('/')
     } catch (err) {
-      setError('Usuario o contraseña incorrectos.')
-      console.error('Error login:', err)
+      // El servidor dice cuántos intentos quedan o cuánto esperar si la cuenta se bloqueó
+      setError(err.response?.data?.error
+        || (err.response?.status === 429 ? 'Demasiados intentos. Espera unos minutos.' : null)
+        || (err.response ? 'Usuario o contraseña incorrectos.' : 'Sin conexión. Revisa tu internet e intenta de nuevo.'))
     } finally {
       setCargando(false)
     }
@@ -46,7 +48,7 @@ export default function Login() {
     setError('')
     setBiometricCargando(true)
     try {
-      const resOptions = await webauthnApi.getAuthOptions(username)
+      const resOptions = await webauthnApi.getAuthOptions(username.toLowerCase())
       const options = resOptions.data
 
       options.challenge = base64ToBuffer(options.challenge)
