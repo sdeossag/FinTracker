@@ -2,10 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import api, { ensureArray, ensureObject, recurrentesApi } from '../api'
-import {
-  estadoPermiso, pedirPermiso, activarNotif,
-  desactivarNotif, notifHabilitadas,
-} from '../utils/notificaciones'
+import { useNotificaciones } from '../utils/notificaciones'
 import Pagina from '../componentes/Pagina'
 import Icono from '../componentes/Icono'
 import { EstadoVacio } from '../componentes/Controles'
@@ -24,8 +21,7 @@ export default function Inicio() {
   const [errorCarga, setErrorCarga] = useState(false)
   const [intento, setIntento] = useState(0)
   const [porRevisar, setPorRevisar] = useState(0)
-  const [notifEstado, setNotifEstado] = useState(() => estadoPermiso())
-  const [notifActivas, setNotifActivas] = useState(() => notifHabilitadas())
+  const notif = useNotificaciones()
 
   useEffect(() => {
     const cargarDatos = async () => {
@@ -75,27 +71,6 @@ export default function Inicio() {
     cargarDatos()
   }, [intento])
 
-  async function toggleNotificaciones() {
-    if (notifEstado === 'unsupported') return
-    if (notifEstado === 'denied') {
-      toast('Notificaciones bloqueadas', { description: 'Actívalas desde los ajustes del navegador.' })
-      return
-    }
-    if (notifActivas) {
-      desactivarNotif()
-      setNotifActivas(false)
-      toast('Notificaciones desactivadas')
-    } else {
-      const permiso = await pedirPermiso()
-      setNotifEstado(estadoPermiso())
-      if (permiso === 'granted') {
-        activarNotif()
-        setNotifActivas(true)
-        toast.success('Notificaciones activadas')
-      }
-    }
-  }
-
   const balanceTotal = patrimonio(cuentas)
   const porPagar = tarjetasPorPagar(cuentas)
 
@@ -104,7 +79,8 @@ export default function Inicio() {
   const saludo = hora < 12 ? 'Buenos días' : hora < 18 ? 'Buenas tardes' : 'Buenas noches'
   const nombre = username ? capitalizar(username) : 'Bienvenido'
 
-  const notifBloqueada = notifEstado === 'denied' || notifEstado === 'unsupported'
+  // La campana lleva a Configuración, donde se explica qué avisa y se activa
+  const notifActivas = notif.estado === 'activas'
 
   const barraIzquierda = (
     <span style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 8 }}>
@@ -115,15 +91,13 @@ export default function Inicio() {
 
   const acciones = (
     <>
-      {notifEstado !== 'unsupported' && (
+      {notif.estado !== 'no-soportado' && notif.estado !== 'cargando' && (
         <button
-          onClick={toggleNotificaciones}
+          onClick={() => navigate('/configuracion#notificaciones')}
           className={`btn-icono${notifActivas ? ' acento' : ''}`}
-          aria-label={notifBloqueada ? 'Notificaciones bloqueadas' : notifActivas ? 'Desactivar notificaciones' : 'Activar notificaciones'}
-          aria-pressed={notifActivas}
-          style={notifBloqueada ? { opacity: 0.5 } : undefined}
+          aria-label={notifActivas ? 'Notificaciones activas' : 'Activar notificaciones'}
         >
-          <Icono nombre={notifBloqueada || !notifActivas ? 'campana-off' : 'campana'} size={18} />
+          <Icono nombre={notifActivas ? 'campana' : 'campana-off'} size={18} />
         </button>
       )}
       <button onClick={() => navigate('/configuracion')} className="btn-icono" aria-label="Configuración">

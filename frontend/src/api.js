@@ -35,7 +35,26 @@ export const borrarDatosLocales = async () => {
   } catch { /* sin caché: nada que borrar */ }
 }
 
+// Este teléfono deja de recibir los avisos de la cuenta que sale
+async function apagarPush() {
+  try {
+    const sw = await navigator.serviceWorker?.ready
+    const sub = await sw?.pushManager?.getSubscription()
+    if (!sub) return
+    // axios directo: sin el interceptor, que con la sesión vencida volvería a llamar a logout
+    const token = getAccessToken()
+    if (token) {
+      await axios.delete(`${BASE_URL}/push/`, {
+        data: { endpoint: sub.endpoint }, headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => {})
+    }
+    await sub.unsubscribe()
+  } catch { /* sin push */ }
+  localStorage.removeItem('ft_notif_enabled')
+}
+
 export const logout = async () => {
+  await apagarPush()
   clearTokens()
   await borrarDatosLocales()
   window.location.href = '/login'

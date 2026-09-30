@@ -389,3 +389,26 @@ class MensajeBanco(models.Model):
 
     def __str__(self):
         return f'{self.remitente}: {self.texto[:40]}'
+
+
+class SuscripcionPush(models.Model):
+    """Un teléfono o navegador que recibe notificaciones (Web Push)."""
+    usuario = models.ForeignKey(User, on_delete=models.CASCADE, related_name='suscripciones_push')
+    endpoint = models.URLField(max_length=600, unique=True)
+    p256dh = models.CharField(max_length=200)
+    auth = models.CharField(max_length=100)
+    dispositivo = models.CharField(max_length=120, blank=True, default='')
+    creada_en = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f'{self.usuario.username} · {self.dispositivo or self.endpoint[:40]}'
+
+
+class AvisoEnviado(models.Model):
+    """Recordatorios ya enviados: cada uno sale una sola vez aunque el cron corra varias."""
+    usuario = models.ForeignKey(User, on_delete=models.CASCADE, related_name='avisos_enviados')
+    clave = models.CharField(max_length=120)   # p. ej. 'pago-3:12:2026-10-05'
+    enviado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ['usuario', 'clave']

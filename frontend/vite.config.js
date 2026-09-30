@@ -17,6 +17,9 @@ export default defineConfig({
       },
 
       workbox: {
+        // Notificaciones push (public/push-sw.js)
+        importScripts: ['push-sw.js'],
+
         // Archivos del build que se pre-cachean (app shell)
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff,woff2}'],
 

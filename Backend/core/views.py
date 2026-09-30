@@ -26,6 +26,7 @@ from webauthn import (
 from webauthn.helpers import bytes_to_base64url
 from webauthn.helpers.structs import PublicKeyCredentialDescriptor
 
+from . import notificaciones
 from .seguridad import error_email, error_usuario
 from .tarjetas import estados_tarjetas
 from .ingesta import (
@@ -33,7 +34,7 @@ from .ingesta import (
 )
 from .models import (
     Cuenta, Categoria, MensajeBanco, Transaccion, TransaccionCategoria, TransaccionRecurrente,
-    UserCredential, PerfilUsuario,
+    UserCredential, PerfilUsuario, SuscripcionPush,
 )
 from .serializers import (
     MensajeBancoSerializer,
@@ -784,3 +785,63 @@ class MensajeBancoViewSet(viewsets.ReadOnlyModelViewSet):
             cuenta.save(update_fields=['terminaciones'])
         registrados = reprocesar_pendientes(request.user)
         return Response({'registrados': registrados, 'cuenta': cuenta.nombre, 'terminacion': ident})
+
+
+# ── Notificaciones push ─────────────────────────────────────────────
+
+class PushView(APIView):
+    """
+    GET: la llave pública para suscribirse y cuántos dispositivos tiene el usuario.
+    POST: guarda la suscripción de este dispositivo. DELETE: la borra.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response({
+            'clave_publica': os.getenv('VAPID_PUBLIC_KEY', ''),
+            'dispositivos': SuscripcionPush.objects.filter(usuario=request.user).count(),
+        })
+
+    def post(self, request):
+        endpoint = str(request.data.get('endpoint', ''))
+        claves = request.data.get('keys') or {}
+        if not endpoint.startswith('https://') or not claves.get('p256dh') or not claves.get('auth'):
+            return Response({'error': 'Suscripción inválida.'}, status=status.HTTP_400_BAD_REQUEST)
+        SuscripcionPush.objects.update_or_create(endpoint=endpoint[:600], defaults={
+            'usuario': request.user,
+            'p256dh': str(claves['p256dh'])[:200],
+            'auth': str(claves['auth'])[:100],
+            'dispositivo': str(request.META.get('HTTP_USER_AGENT', ''))[:120],
+        })
+        return Response({'status': 'ok'}, status=status.HTTP_201_CREATED)
+
+    def delete(self, request):
+        SuscripcionPush.objects.filter(usuario=request.user, endpoint=str(request.data.get('endpoint', ''))).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ProbarPushView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
+
+    def post(self, request):
+        n = notificaciones.enviar(request.user, 'Notificaciones activadas',
+                                  'Así te vamos a avisar de los cortes y pagos de tus tarjetas.', url='/configuracion')
+        if not n:
+            return Response({'error': 'No se pudo enviar. Vuelve a activar las notificaciones.'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'enviadas': n})
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class RecordatoriosView(APIView):
+    """Lo llama GitHub Actions una vez al día, con el header X-Cron-Token."""
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        esperado = os.getenv('RECORDATORIOS_TOKEN', '')
+        recibido = request.META.get('HTTP_X_CRON_TOKEN', '')
+        if not esperado or not secrets.compare_digest(esperado, recibido):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        return Response(notificaciones.enviar_recordatorios())

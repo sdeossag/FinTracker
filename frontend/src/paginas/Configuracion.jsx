@@ -3,10 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import api, { logout, setTokens } from '../api'
 import { emailValido, errorUsuario, normalizarUsuario, passwordValida } from '../utils/cuentaUsuario'
-import {
-  notifSoportadas, estadoPermiso, notifHabilitadas,
-  pedirPermiso, activarNotif, desactivarNotif,
-} from '../utils/notificaciones'
+import { probarNotificacion, useNotificaciones } from '../utils/notificaciones'
 import Pagina from '../componentes/Pagina'
 import Icono from '../componentes/Icono'
 import Sheet from '../componentes/Sheet'
@@ -35,8 +32,7 @@ export default function Configuracion() {
   const [perfilError, setPerfilError] = useState('')
   const [guardandoPerfil, setGuardandoPerfil] = useState(false)
 
-  const [permiso, setPermiso] = useState(() => estadoPermiso())
-  const [notifOn, setNotifOn] = useState(() => notifHabilitadas())
+  const notif = useNotificaciones()
 
   const [mostrarPassword, setMostrarPassword] = useState(false)
   const [passForm, setPassForm] = useState({ current: '', nueva: '', confirmar: '' })
@@ -52,14 +48,24 @@ export default function Configuracion() {
     }).catch(() => {})
   }, [])
 
+  // Desde la campana de Inicio: directo a la sección de notificaciones
+  useEffect(() => {
+    if (window.location.hash === '#notificaciones') {
+      requestAnimationFrame(() => document.getElementById('notificaciones')?.scrollIntoView({ block: 'start' }))
+    }
+  }, [])
+
   const manejarNotif = async (activar) => {
-    if (permiso === 'default') {
-      const resultado = await pedirPermiso()
-      setPermiso(resultado)
-      setNotifOn(resultado === 'granted')
-    } else if (permiso === 'granted') {
-      if (activar) { activarNotif(); setNotifOn(true) }
-      else { desactivarNotif(); setNotifOn(false) }
+    try {
+      const estado = await notif.cambiar(activar)
+      if (estado === 'activas') {
+        // Una de prueba: así sabes de una vez que sí llegan
+        probarNotificacion().catch(() => toast.error('Se activaron, pero la notificación de prueba no llegó.'))
+      } else if (estado === 'bloqueadas') {
+        toast('Notificaciones bloqueadas', { description: 'Actívalas en Ajustes → Notificaciones → FinTracker.' })
+      }
+    } catch (err) {
+      toast.error('No se pudieron activar', { description: err.message || 'Intenta de nuevo.' })
     }
   }
 
@@ -140,7 +146,6 @@ export default function Configuracion() {
   }
 
   const noCoinciden = passForm.confirmar.length > 0 && passForm.nueva !== passForm.confirmar
-  const soportadas = notifSoportadas()
   const periodoLabel = (periodoTemp ?? 1) === 1 ? 'Día 1 · mes calendario' : `Día ${periodoTemp} de cada mes`
 
   return (
@@ -216,24 +221,29 @@ export default function Configuracion() {
       <p className="seccion-pie" style={{ marginBottom: 32 }}>El día del mes en que empiezan a contar tus límites de gasto.</p>
 
       {/* Notificaciones */}
-      <h2 className="seccion-label">Notificaciones</h2>
+      <h2 className="seccion-label" id="notificaciones" style={{ scrollMarginTop: 80 }}>Notificaciones</h2>
       <div className="lista-grupo">
         <div className="fila" style={{ minHeight: 52 }}>
           <Mosaico icono="campana" color="#FF453A" />
-          <span className="fila-cuerpo fila-titulo">Alertas</span>
-          {soportadas && permiso !== 'denied' ? (
-            <Interruptor activo={notifOn} onChange={manejarNotif} etiqueta="Alertas" />
-          ) : (
-            <span className="texto-nota">{soportadas ? 'Bloqueadas' : 'No disponibles'}</span>
+          <span className="fila-cuerpo fila-titulo">Recordatorios de tarjetas</span>
+          {notif.estado === 'activas' || notif.estado === 'apagadas' ? (
+            <Interruptor
+              activo={notif.estado === 'activas'}
+              onChange={manejarNotif}
+              disabled={notif.ocupado}
+              etiqueta="Recordatorios de tarjetas"
+            />
+          ) : notif.estado !== 'cargando' && (
+            <span className="texto-nota">{notif.estado === 'bloqueadas' ? 'Bloqueadas' : 'No disponibles'}</span>
           )}
         </div>
       </div>
       <p className="seccion-pie" style={{ marginBottom: 32 }}>
-        {!soportadas
-          ? 'Este navegador no admite notificaciones.'
-          : permiso === 'denied'
-            ? 'Las bloqueaste en el navegador. Actívalas desde sus ajustes del sitio.'
-            : 'Recurrentes registradas automáticamente y presupuestos que se pasan del límite.'}
+        {{
+          instalar: 'En iPhone llegan solo con FinTracker en la pantalla de inicio: en Safari toca Compartir → Agregar a inicio y ábrela desde ahí.',
+          'no-soportado': 'Este navegador no admite notificaciones.',
+          bloqueadas: 'Las bloqueaste. Actívalas en Ajustes → Notificaciones → FinTracker.',
+        }[notif.estado] ?? 'Te avisamos un día antes del corte, cuando cierra el extracto y 3 días, 1 día y el día del pago. Aunque tengas la app cerrada.'}
       </p>
 
       {/* Sesión */}
