@@ -6,6 +6,11 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      // Service worker propio (src/sw.js): la página va primero a la red,
+      // el resto del app shell sale del precache, y maneja las notificaciones push
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       registerType: 'autoUpdate',
 
       // El manifest lo manejamos manualmente en public/manifest.webmanifest
@@ -14,50 +19,12 @@ export default defineConfig({
       // Habilitar SW en desarrollo para poder probar offline
       devOptions: {
         enabled: true,
+        type: 'module',
       },
 
-      workbox: {
-        // Notificaciones push (public/push-sw.js)
-        importScripts: ['push-sw.js'],
-
-        // Archivos del build que se pre-cachean (app shell)
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff,woff2}'],
-
-        // Fallback para React Router en modo offline
-        navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//],
-
-        runtimeCaching: [
-          {
-            // API calls: NetworkFirst — siempre intenta red, cachea si hay respuesta
-            urlPattern: /\/api\/.*/,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'fintracker-api',
-              networkTimeoutSeconds: 10,
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 60 * 60 * 24, // 24 horas
-              },
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-            },
-          },
-          {
-            // Google Fonts y assets externos: CacheFirst
-            urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts',
-              expiration: {
-                maxEntries: 20,
-                maxAgeSeconds: 60 * 60 * 24 * 365, // 1 año
-              },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-        ],
+      injectManifest: {
+        // Sin html: index.html no sale del precache, se pide a la red (ver src/sw.js)
+        globPatterns: ['**/*.{js,css,svg,png,ico,woff,woff2}'],
       },
     }),
   ],

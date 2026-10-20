@@ -21,12 +21,12 @@
 
     <!-- iOS PWA — apple-touch-icon DEBE ser PNG (iOS ignora SVG) -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <!-- "black" y no "black-translucent": con translúcida, iOS 26 deja el área visible de
-         la app instalada 62 pt más corta que la pantalla (unas veces sí y otras no): queda
-         una franja negra abajo y la barra de pestañas se descuadra. Con "black" la app ocupa
-         exactamente el espacio bajo la barra de estado (igual que NutriFit).
-         iOS lee esta etiqueta solo al instalar: hay que quitar la app y agregarla de nuevo. -->
-    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <!-- Barra translúcida: la app se dibuja detrás de la hora y del notch o la Dynamic
+         Island; cada pantalla se separa con env(safe-area-inset-top), sin detectar el modelo.
+         El bug de iOS 26 que dejaba una franja abajo se corrige en index.css (WebKit 301108).
+         iOS lee esta etiqueta solo al instalar: hay que quitar la app y agregarla de nuevo.
+         Plan B si la barra de pestañas vuelve a fallar: quitar esta etiqueta (franja opaca). -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="FinTracker" />
     <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
 

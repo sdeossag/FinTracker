@@ -20,7 +20,7 @@ import ProtectedRoute from './componentes/ProtectedRoute'
 import Configuracion from './paginas/Configuracion'
 import Graficas from './paginas/Graficas'
 import Icono from './componentes/Icono'
-import { irArriba } from './utils/scroll'
+import { contenedorScroll, irArriba } from './utils/scroll'
 import Novedades from './componentes/Novedades'
 import { getAccessToken } from './api'
 
@@ -28,6 +28,24 @@ import { getAccessToken } from './api'
 const SIN_NAV = ['/login', '/registro', '/biometria', '/onboarding', '/nueva', '/editar']
 // Donde no se muestran las novedades: sin sesión o configurando la cuenta
 const SIN_NOVEDADES = ['/login', '/registro', '/onboarding']
+
+// Pantallas sin <Pagina> (y sin su barra): la zona de la hora la cubre VeloHora
+const SIN_BARRA = ['/login', '/registro', '/onboarding']
+
+// Material sobre la hora y el notch, solo cuando hay contenido pasando por detrás.
+// Mide 0 si la barra de estado es opaca (safe-area-inset-top = 0).
+function VeloHora() {
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const el = contenedorScroll()
+    if (!el) return
+    const onScroll = () => setVisible(el.scrollTop > 1)
+    onScroll()
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
+  return <div className="velo-hora" data-visible={visible} aria-hidden="true" />
+}
 
 // Teclado abierto (solo pantallas táctiles): la barra de pestañas se esconde
 // para no quedar flotando encima del teclado
@@ -87,6 +105,7 @@ function AppContent() {
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
       </main>
+      {SIN_BARRA.includes(location.pathname) && <VeloHora key={location.pathname} />}
       {!sinNav && <NavBar oculta={tecladoAbierto} />}
       {getAccessToken() && !SIN_NOVEDADES.includes(location.pathname) && <Novedades />}
     </div>

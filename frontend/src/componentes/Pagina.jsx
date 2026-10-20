@@ -20,6 +20,8 @@ export default function Pagina({
   const barraRef = useRef(null)
   const tituloRef = useRef(null)
   const [compacta, setCompacta] = useState(false)
+  // Algo ya pasa por detrás de la hora: esa franja se vuelve material aunque la barra no esté compacta
+  const [bajoHora, setBajoHora] = useState(false)
 
   useEffect(() => {
     let raf = 0
@@ -30,6 +32,7 @@ export default function Pagina({
       if (!barra) return
       const limite = barra.getBoundingClientRect().bottom
       setCompacta(t ? t.getBoundingClientRect().bottom < limite : scrollActual() > 4)
+      setBajoHora(scrollActual() > 1)
     }
     const onScroll = () => { if (!raf) raf = requestAnimationFrame(medir) }
     medir()
@@ -45,7 +48,8 @@ export default function Pagina({
 
   return (
     <div className={`pagina${sinNav ? ' sin-nav' : ''}`}>
-      <header className="barra" data-compacta={compacta} data-modal={modal || undefined} ref={barraRef}>
+      <header className="barra" data-compacta={compacta} data-bajo-hora={bajoHora} data-modal={modal || undefined} ref={barraRef}>
+        <span className="barra-estado" aria-hidden="true" />
         <div className="barra-lado">
           {izquierda ?? (atras && (
             <button type="button" className="btn-atras" onClick={volver}>

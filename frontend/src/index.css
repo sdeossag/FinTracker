@@ -82,6 +82,16 @@ html {
   overscroll-behavior: none;                  /* sin pull-to-refresh sobre la app */
 }
 
+/* App instalada en iOS 26 con barra translúcida: si la página mide menos que la
+   pantalla, iOS deja el área visible más corta (por el alto de la barra de estado)
+   y lo fijado abajo queda flotando (WebKit 301108). Con la página al menos del alto
+   de la pantalla, iOS da el área completa. El min() evita scroll de más donde la
+   barra es opaca (ahí el inset es 0 y 100lvh ya es la pantalla, WebKit 316008).
+   Solo aplica instalada: en Safari normal no cambia nada. (frappe-ui PR #1289) */
+@media (display-mode: standalone) {
+  html { min-height: min(100lvh, calc(100% + env(safe-area-inset-top))); }
+}
+
 body {
   background: var(--fondo);
   color: var(--texto-primario);
@@ -211,6 +221,23 @@ input, textarea, select { font-size: 16px; }
 }
 .barra[data-compacta="true"]::before,
 .barra[data-compacta="true"]::after { opacity: 1; }
+
+/* La zona de la hora y del notch (alto 0 si la barra de estado es opaca): con el
+   primer scroll se vuelve material, para que el texto nunca quede bajo la hora a la vista */
+.barra-estado {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: var(--safe-top);
+  background: rgba(0, 0, 0, 0.72);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  opacity: 0;
+  transition: opacity 200ms ease;
+  pointer-events: none;
+  z-index: -1;
+}
+.barra[data-bajo-hora="true"] .barra-estado { opacity: 1; }
+.barra[data-compacta="true"] .barra-estado { opacity: 0; }   /* ya lo cubre la barra entera */
 
 .barra-lado { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .barra-lado.der { justify-content: flex-end; }
@@ -1001,6 +1028,21 @@ textarea.campo-inline { resize: none; line-height: 1.4; min-height: 72px; }
   margin: 0 auto;
   background: var(--fondo);
 }
+/* Zona de la hora en login, registro y onboarding (ver VeloHora en App.jsx) */
+.velo-hora {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: var(--safe-top);
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.72);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  opacity: 0;
+  transition: opacity 200ms ease;
+  pointer-events: none;
+}
+.velo-hora[data-visible="true"] { opacity: 1; }
+
 #scroller {
   position: absolute;
   inset: 0;
