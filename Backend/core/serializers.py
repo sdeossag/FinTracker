@@ -124,7 +124,7 @@ class CategoriaSerializer(serializers.ModelSerializer):
         model = Categoria
         fields = [
             'id', 'nombre', 'tipo', 'presupuesto_mensual',
-            'presupuesto_semanal', 'color_hex', 'activa'
+            'presupuesto_semanal', 'color_hex', 'activa', 'en_tope_semanal',
         ]
 
     def create(self, validated_data):

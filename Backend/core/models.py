@@ -26,6 +26,8 @@ class PerfilUsuario(models.Model):
     novedades_vistas = models.CharField(max_length=60, blank=True, default='')
     # Al cambiar la contraseña: las sesiones abiertas antes de esta fecha ya no se renuevan
     sesiones_desde = models.DateTimeField(null=True, blank=True)
+    # Tope de gasto por semana (lunes a domingo). Vacío = sin tope.
+    tope_semanal = models.BigIntegerField(null=True, blank=True)
 
     class Meta:
         verbose_name = 'Perfil de usuario'
@@ -136,6 +138,8 @@ class Categoria(models.Model):
     presupuesto_semanal = models.BigIntegerField(null=True, blank=True)
     color_hex = models.CharField(max_length=7, default='#3A86FF')
     activa = models.BooleanField(default=True)
+    # ¿Sus gastos cuentan en el tope semanal? Los fijos (arriendo, colegio) se apagan.
+    en_tope_semanal = models.BooleanField(default=True)
 
     class Meta:
         ordering = ['tipo', 'nombre']

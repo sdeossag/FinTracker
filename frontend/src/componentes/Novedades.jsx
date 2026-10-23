@@ -12,23 +12,21 @@ import { hayNovedades, marcarNovedadesVistas } from '../utils/novedades'
 const HAY_ATAJO = !!import.meta.env.VITE_ATAJO_URL
 
 const NOVEDADES = [
-  { icono: 'campana', color: '#FF453A', titulo: 'Recordatorios de tus tarjetas',
-    texto: 'Te avisamos un día antes del corte, cuando cierra el extracto y antes de que venza el pago, aunque tengas la app cerrada. Actívalos en Configuración → Notificaciones.' },
-  { icono: 'etiqueta', color: '#FF9F0A', titulo: 'Categorías más inteligentes',
-    texto: 'Los SMS toman la categoría que ya usaste aunque el banco escriba el comercio distinto: "EXITO CALLE 80" es tu mismo Éxito. Si el comercio es nuevo, te sugerimos una de tus categorías.' },
-  { icono: 'candado', color: '#30D158', titulo: 'Tu cuenta, más protegida',
-    texto: 'Tras 5 intentos fallidos la cuenta se bloquea 15 minutos. Las contraseñas nuevas llevan mayúscula, número y símbolo, y al cambiarla se cierra tu sesión en los demás dispositivos.' },
+  { icono: 'objetivo', color: '#30D158', titulo: 'Tope semanal',
+    texto: 'Ponle un máximo a lo que gastas de lunes a domingo. En Inicio ves cuánto llevas, cuánto te queda y qué día gastaste más.' },
+  { icono: 'campana', color: '#FF453A', titulo: 'Avisos del tope',
+    texto: 'Te avisamos al llegar al 80 % y si te pasas, y cada lunes te contamos cómo cerró la semana. Actívalos en Configuración → Notificaciones.' },
+  { icono: 'etiqueta', color: '#FF9F0A', titulo: 'Los gastos fijos, aparte',
+    texto: 'En Presupuesto → Semana apaga categorías como arriendo o colegio: así el tope mide tu día a día. Las compras a cuotas cuentan solo la cuota.' },
+  { icono: 'lista', color: '#64D2FF', titulo: 'Historial de la semana',
+    texto: 'Nuevo filtro "Esta semana" en el Historial, también desde el detalle del tope.' },
   ...(HAY_ATAJO ? [{ icono: 'mensaje', color: '#0A84FF', titulo: 'El atajo, en un toque',
-    texto: 'Ya no tienes que armarlo: instálalo desde Configuración → Registrar desde SMS del banco, pega tu token y crea la automatización.' }] : []),
-  { icono: 'mapa', color: '#64D2FF', titulo: 'Recorrido por la app',
-    texto: '¿Quieres ver todo lo que puede hacer FinTracker? Está en Configuración → Ayuda.' },
+    texto: 'Instálalo desde Configuración → Registrar desde SMS del banco, pega tu token y crea la automatización.' }] : []),
 ]
 
 const NOTAS = [
-  'Quitamos "Puedes gastar hoy": el aviso de pago de tus tarjetas en Inicio ya te dice lo importante.',
-  'Al entrar, tu usuario ya no distingue mayúsculas de minúsculas.',
-  'Al cerrar sesión borramos de este teléfono los datos que la app guardaba para funcionar sin conexión.',
-  'Tu contraseña actual sigue sirviendo; las reglas nuevas aplican cuando la cambies.',
+  'En iPhone, FinTracker ahora se dibuja detrás de la hora y del notch. Para verlo, borra la app de la pantalla de inicio y agrégala de nuevo desde Safari.',
+  'Las versiones nuevas llegan apenas abres la app, sin tener que abrirla dos veces.',
 ]
 
 export default function Novedades() {

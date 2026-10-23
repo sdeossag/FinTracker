@@ -7,6 +7,8 @@ import Pagina from '../componentes/Pagina'
 import Icono from '../componentes/Icono'
 import { EstadoVacio } from '../componentes/Controles'
 import Marca from '../componentes/Marca'
+import { DetalleSemanaSheet, InvitacionTope, TarjetaSemana, TopeSheet } from '../componentes/Semana'
+import { useSemana } from '../utils/semana'
 import { capitalizar, formatCOP } from '../utils/formato'
 import {
   COLOR_TONO, esDeuda, fechaCorta, patrimonio, plazo, resumenTarjeta, rutaPagarTarjeta, tarjetasPorPagar,
@@ -22,6 +24,9 @@ export default function Inicio() {
   const [intento, setIntento] = useState(0)
   const [porRevisar, setPorRevisar] = useState(0)
   const notif = useNotificaciones()
+  const semana = useSemana()
+  const [detalleSemana, setDetalleSemana] = useState(false)
+  const [editandoTope, setEditandoTope] = useState(false)
 
   useEffect(() => {
     const cargarDatos = async () => {
@@ -180,6 +185,11 @@ export default function Inicio() {
             </div>
           </section>
 
+          {/* ── Tope de la semana ── */}
+          {semana.datos?.tope
+            ? <TarjetaSemana datos={semana.datos} onAbrir={() => setDetalleSemana(true)} />
+            : semana.datos && <InvitacionTope onCrear={() => setEditandoTope(true)} />}
+
           {/* ── SMS que necesitan un dato ── */}
           {porRevisar > 0 && (
             <div className="lista-grupo" style={{ marginBottom: porPagar.length ? 10 : 28 }}>
@@ -235,6 +245,18 @@ export default function Inicio() {
           </div>
         </div>
       )}
+      <DetalleSemanaSheet
+        abierto={detalleSemana}
+        onCerrar={() => setDetalleSemana(false)}
+        datos={semana.datos}
+        onCambiarTope={() => { setDetalleSemana(false); setEditandoTope(true) }}
+      />
+      <TopeSheet
+        abierto={editandoTope}
+        onCerrar={() => setEditandoTope(false)}
+        datos={semana.datos}
+        onGuardado={semana.setDatos}
+      />
     </Pagina>
   )
 }

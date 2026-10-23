@@ -406,6 +406,9 @@ def registrar(mensaje, datos, cuentas, hoy):
         mensaje.estado = 'registrado'
         mensaje.motivo = ''
         mensaje.save()
+    if trans.tipo == 'gasto':
+        from .semana import revisar_tope
+        revisar_tope(mensaje.usuario, hoy, trans.fecha)
     return ''
 
 

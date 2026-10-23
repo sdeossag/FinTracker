@@ -2,7 +2,8 @@
 #
 # El teléfono se suscribe desde Configuración y guarda su suscripción aquí.
 # Una vez al día, GitHub Actions llama a /api/recordatorios/enviar/ (con el token
-# RECORDATORIOS_TOKEN) y se avisan los cortes y pagos de las tarjetas.
+# RECORDATORIOS_TOKEN) y se avisan los cortes y pagos de las tarjetas (y los lunes,
+# cómo cerró la semana si hay tope semanal).
 # Cada aviso sale una sola vez (AvisoEnviado), aunque el cron corra de nuevo.
 #
 # Variables de entorno: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT (mailto:…),
@@ -111,6 +112,7 @@ def avisos_de_tarjeta(tarjeta, e, hoy):
 
 def enviar_recordatorios(hoy=None):
     """Recorre a quien tenga notificaciones activas. Devuelve {'usuarios', 'avisos'}."""
+    from .semana import resumen_semana_pasada
     from .views import cuentas_con_saldo   # evita la importación circular
 
     hoy = hoy or timezone.localdate()
@@ -119,15 +121,22 @@ def enviar_recordatorios(hoy=None):
     for usuario in usuarios:
         cuentas = list(cuentas_con_saldo(usuario))
         estados = estados_tarjetas(cuentas, hoy)
-        for tarjeta in (c for c in cuentas if c.id in estados):
-            for clave, titulo, cuerpo in avisos_de_tarjeta(tarjeta, estados[tarjeta.id], hoy):
-                try:
-                    with transaction.atomic():
-                        AvisoEnviado.objects.create(usuario=usuario, clave=clave)
-                except IntegrityError:
-                    continue   # ya se mandó
-                enviar(usuario, titulo, cuerpo, url='/cuentas', etiqueta=clave.rsplit(':', 1)[0])
-                total += 1
+        avisos = [
+            (clave, titulo, cuerpo, '/cuentas')
+            for tarjeta in (c for c in cuentas if c.id in estados)
+            for clave, titulo, cuerpo in avisos_de_tarjeta(tarjeta, estados[tarjeta.id], hoy)
+        ]
+        resumen = resumen_semana_pasada(usuario, hoy)
+        if resumen:
+            avisos.append((*resumen, '/presupuesto?vista=semana'))
+        for clave, titulo, cuerpo, url in avisos:
+            try:
+                with transaction.atomic():
+                    AvisoEnviado.objects.create(usuario=usuario, clave=clave)
+            except IntegrityError:
+                continue   # ya se mandó
+            enviar(usuario, titulo, cuerpo, url=url, etiqueta=clave.rsplit(':', 1)[0])
+            total += 1
     # Lo enviado hace más de 3 meses ya no puede repetirse: se limpia
     AvisoEnviado.objects.filter(enviado_en__lt=timezone.now() - timedelta(days=100)).delete()
     return {'usuarios': len(usuarios), 'avisos': total}

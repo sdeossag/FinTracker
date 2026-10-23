@@ -1,5 +1,5 @@
 # Vistas de FinTracker — endpoints de la API REST
-from datetime import date
+from datetime import date, timedelta
 
 from django.db import IntegrityError, transaction as db_transaction
 from django.db.models import BigIntegerField, Exists, OuterRef, Q, Subquery, Sum
@@ -26,7 +26,7 @@ from webauthn import (
 from webauthn.helpers import bytes_to_base64url
 from webauthn.helpers.structs import PublicKeyCredentialDescriptor
 
-from . import notificaciones
+from . import notificaciones, semana
 from .seguridad import error_email, error_usuario
 from .tarjetas import estados_tarjetas
 from .ingesta import (
@@ -175,6 +175,11 @@ class TransaccionViewSet(viewsets.ModelViewSet):
             except ValueError:
                 pass
 
+        # Solo esta semana (lunes a domingo): ?semana=actual
+        if params.get('semana') == 'actual':
+            inicio = semana.inicio_semana(timezone.localdate())
+            qs = qs.filter(fecha__gte=inicio, fecha__lt=inicio + timedelta(days=7))
+
         # Búsqueda por descripción o nombre de categoría: ?q=rappi
         q = params.get('q', '').strip()
         if q:
@@ -186,6 +191,17 @@ class TransaccionViewSet(viewsets.ModelViewSet):
             )
 
         return qs
+
+    # Un gasto nuevo o editado puede cruzar el 80 % o el 100 % del tope semanal
+    def perform_create(self, serializer):
+        t = serializer.save()
+        if t.tipo == 'gasto':
+            semana.revisar_tope(self.request.user, timezone.localdate(), t.fecha)
+
+    def perform_update(self, serializer):
+        t = serializer.save()
+        if t.tipo == 'gasto':
+            semana.revisar_tope(self.request.user, timezone.localdate(), t.fecha)
 
     def list(self, request, *args, **kwargs):
         """
@@ -365,6 +381,8 @@ class TransaccionRecurrenteViewSet(viewsets.ModelViewSet):
                 continue
             creadas += 1
 
+        if creadas:
+            semana.revisar_tope(request.user, hoy)
         return Response({'creadas': creadas})
 
     def _es_hoy(self, rec, hoy):
@@ -845,3 +863,27 @@ class RecordatoriosView(APIView):
         if not esperado or not secrets.compare_digest(esperado, recibido):
             return Response(status=status.HTTP_403_FORBIDDEN)
         return Response(notificaciones.enviar_recordatorios())
+
+
+class SemanaView(APIView):
+    """GET: cómo va la semana frente al tope. PATCH {tope}: lo cambia (null = sin tope)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response(semana.estado_semana(request.user, timezone.localdate()))
+
+    def patch(self, request):
+        tope = request.data.get('tope')
+        if tope in (None, ''):
+            tope = None
+        else:
+            try:
+                tope = int(tope)
+            except (TypeError, ValueError):
+                return Response({'error': 'El tope debe ser un número.'}, status=status.HTTP_400_BAD_REQUEST)
+            if not (1_000 <= tope <= 1_000_000_000):
+                return Response({'error': 'Pon un tope entre $1.000 y $1.000.000.000.'}, status=status.HTTP_400_BAD_REQUEST)
+        PerfilUsuario.objects.update_or_create(usuario=request.user, defaults={'tope_semanal': tope})
+        hoy = timezone.localdate()
+        semana.revisar_tope(request.user, hoy)
+        return Response(semana.estado_semana(request.user, hoy))

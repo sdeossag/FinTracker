@@ -4,8 +4,15 @@ import api, { ensureArray, ensureObject } from '../api'
 import Pagina from '../componentes/Pagina'
 import Icono from '../componentes/Icono'
 import Sheet, { ConfirmarSheet } from '../componentes/Sheet'
-import { AvisoError, CampoMonto, EstadoVacio, Segmentado, SelectorColor } from '../componentes/Controles'
+import { AvisoError, CampoMonto, EstadoVacio, Interruptor, Segmentado, SelectorColor } from '../componentes/Controles'
+import { DetalleSemanaSheet, TarjetaSemana, TopeSheet } from '../componentes/Semana'
+import { useSemana } from '../utils/semana'
 import { formatCOP } from '../utils/formato'
+
+const VISTAS = [
+  { valor: 'semana', etiqueta: 'Semana' },
+  { valor: 'mes',    etiqueta: 'Mes' },
+]
 
 const COLORES = ['#34C759', '#0A84FF', '#BF5AF2', '#FF9F0A', '#FFD60A', '#FF453A', '#64D2FF', '#FF375F']
 const FORM_VACIO = { nombre: '', tipo: 'gasto', presupuesto_mensual: '', color_hex: '#0A84FF' }
@@ -34,6 +41,12 @@ export default function Presupuesto() {
   const [gastosMes, setGastosMes] = useState({})
   const [cargando, setCargando] = useState(true)
   const [filtroTipo, setFiltroTipo] = useState('gasto')
+  // ?vista=semana llega desde los avisos del tope
+  const [vista, setVista] = useState(() =>
+    new URLSearchParams(window.location.search).get('vista') === 'semana' ? 'semana' : 'mes')
+  const semana = useSemana()
+  const [detalleSemana, setDetalleSemana] = useState(false)
+  const [editandoTope, setEditandoTope] = useState(false)
 
   const [modalAbierto, setModalAbierto] = useState(false)
   const [form, setForm] = useState(FORM_VACIO)
@@ -161,7 +174,21 @@ export default function Presupuesto() {
     }
   }
 
+  // Sacar o meter una categoría del tope: se ve al instante y se recalcula la semana
+  const cambiarEnTope = async (cat, enTope) => {
+    setCategorias(cs => cs.map(c => c.id === cat.id ? { ...c, en_tope_semanal: enTope } : c))
+    try {
+      await api.patch(`/categorias/${cat.id}/`, { en_tope_semanal: enTope })
+      semana.recargar()
+    } catch {
+      setCategorias(cs => cs.map(c => c.id === cat.id ? { ...c, en_tope_semanal: !enTope } : c))
+      toast.error('No se pudo guardar el cambio')
+    }
+  }
+
   const categoriasFiltradas = categorias.filter(c => c.tipo === filtroTipo)
+  const categoriasGasto = categorias.filter(c => c.tipo === 'gasto')
+  const gastoSemana = Object.fromEntries((semana.datos?.por_categoria || []).map(c => [c.id, c.total]))
 
   // Resumen total solo para categorías con presupuesto asignado
   const conPresupuesto = categoriasFiltradas.filter(c => c.presupuesto_mensual)
@@ -175,12 +202,27 @@ export default function Presupuesto() {
     <Pagina
       titulo="Presupuesto"
       atras={{ etiqueta: 'Gráficas', a: '/graficas' }}
-      acciones={
+      acciones={vista === 'mes' && (
         <button onClick={abrirNueva} className="btn-icono acento" aria-label="Nueva categoría">
           <Icono nombre="plus" size={20} grosor={2.2} />
         </button>
-      }
+      )}
     >
+      <div style={{ marginBottom: 16 }}>
+        <Segmentado etiqueta="Periodo del presupuesto" opciones={VISTAS} valor={vista} onChange={setVista} grande />
+      </div>
+
+      {vista === 'semana' ? (
+        <VistaSemana
+          semana={semana.datos}
+          categorias={categoriasGasto}
+          gastoSemana={gastoSemana}
+          cargando={cargando}
+          onAbrir={() => setDetalleSemana(true)}
+          onTope={() => setEditandoTope(true)}
+          onEnTope={cambiarEnTope}
+        />
+      ) : (<>
       <div style={{ marginBottom: 20 }}>
         <Segmentado etiqueta="Tipo de categoría" opciones={TIPOS} valor={filtroTipo} onChange={setFiltroTipo} />
       </div>
@@ -260,6 +302,20 @@ export default function Presupuesto() {
           })}
         </div>
       )}
+      </>)}
+
+      <DetalleSemanaSheet
+        abierto={detalleSemana}
+        onCerrar={() => setDetalleSemana(false)}
+        datos={semana.datos}
+        onCambiarTope={() => { setDetalleSemana(false); setEditandoTope(true) }}
+      />
+      <TopeSheet
+        abierto={editandoTope}
+        onCerrar={() => setEditandoTope(false)}
+        datos={semana.datos}
+        onGuardado={semana.setDatos}
+      />
 
       {/* Crear / editar */}
       <Sheet
@@ -323,5 +379,64 @@ export default function Presupuesto() {
         cargando={eliminando}
       />
     </Pagina>
+  )
+}
+
+// Semana: el tope, cómo vas y qué categorías cuentan
+function VistaSemana({ semana, categorias, gastoSemana, cargando, onAbrir, onTope, onEnTope }) {
+  if (!semana) {
+    return <div className="skeleton" style={{ height: 210, borderRadius: 20 }} aria-busy="true" />
+  }
+  return (
+    <div className="aparecer">
+      {semana.tope ? (
+        <>
+          <TarjetaSemana datos={semana} onAbrir={onAbrir} />
+          <button className="btn-tinte" onClick={onTope} style={{ marginTop: -14, marginBottom: 28 }}>
+            Cambiar tope · {formatCOP(semana.tope)}
+          </button>
+        </>
+      ) : (
+        <EstadoVacio
+          icono="objetivo"
+          titulo="Sin tope semanal"
+          texto={semana.sugerido
+            ? `Ponle un máximo a lo que gastas de lunes a domingo. Tu promedio es ${formatCOP(semana.sugerido)} por semana.`
+            : 'Ponle un máximo a lo que gastas de lunes a domingo y mira cada día cuánto te queda.'}
+          accion={<button className="btn-primario" onClick={onTope}>Poner tope</button>}
+        />
+      )}
+
+      <h2 className="seccion-label">Qué cuenta en el tope</h2>
+      {cargando ? (
+        <div className="skeleton" style={{ height: 120, borderRadius: 20 }} />
+      ) : categorias.length === 0 ? (
+        <p className="seccion-pie" style={{ paddingTop: 0 }}>Todos tus gastos cuentan. Crea categorías en Mes para sacar los fijos.</p>
+      ) : (
+        <div className="lista-grupo">
+          {categorias.map(cat => (
+            <div key={cat.id} className="fila" style={{ '--sangria': '50px', minHeight: 56 }}>
+              <span style={{ width: 12, height: 12, borderRadius: '50%', background: cat.color_hex, flexShrink: 0, margin: '0 6px' }} />
+              <div className="fila-cuerpo">
+                <p className="fila-titulo" style={{ fontWeight: 500, opacity: cat.en_tope_semanal ? 1 : 0.55 }}>{cat.nombre}</p>
+                <p className="fila-sub cifra">
+                  {cat.en_tope_semanal
+                    ? (gastoSemana[cat.id] ? `${formatCOP(gastoSemana[cat.id])} esta semana` : 'Nada esta semana')
+                    : 'Gasto fijo · no cuenta'}
+                </p>
+              </div>
+              <Interruptor
+                activo={cat.en_tope_semanal !== false}
+                onChange={v => onEnTope(cat, v)}
+                etiqueta={`${cat.nombre} cuenta en el tope semanal`}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="seccion-pie">
+        Apaga los gastos fijos, como el arriendo o el colegio: así el tope mide tu día a día. Las compras a cuotas cuentan solo la cuota.
+      </p>
+    </div>
   )
 }

@@ -50,6 +50,9 @@ const detalleSinCategoria = (t) => {
   return capitalizar(t.tipo)
 }
 
+// Valor especial del filtro de período: de lunes a hoy (lo que cuenta en el tope semanal)
+const SEMANA = 'semana'
+
 /* ── Panel de filtros ─────────────────────────────────── */
 function FiltrosPanel({ open, onClose, filtroTipo, setFiltroTipo, filtroMes, setFiltroMes, meses }) {
   const hayFiltros = filtroTipo !== 'todos' || !!filtroMes
@@ -76,7 +79,7 @@ function FiltrosPanel({ open, onClose, filtroTipo, setFiltroTipo, filtroMes, set
 
       <p className="seccion-label" style={{ paddingLeft: 4 }}>Período</p>
       <div className="lista-grupo" role="radiogroup" aria-label="Período" style={{ background: 'var(--card)' }}>
-        {[{ valor: '', etiqueta: 'Todos los meses' }, ...meses].map(m => {
+        {[{ valor: '', etiqueta: 'Todos los meses' }, { valor: SEMANA, etiqueta: 'Esta semana' }, ...meses].map(m => {
           const sel = filtroMes === m.valor
           return (
             <button
@@ -104,7 +107,9 @@ export default function Transacciones() {
   const [transacciones, setTransacciones] = useState([])
   const [cargando, setCargando] = useState(true)
   const [filtroTipo, setFiltroTipo] = useState('todos')
-  const [filtroMes, setFiltroMes] = useState('')
+  // ?semana=actual llega desde el detalle del tope semanal
+  const [filtroMes, setFiltroMes] = useState(() =>
+    new URLSearchParams(window.location.search).get('semana') === 'actual' ? SEMANA : '')
   const [busqueda, setBusqueda] = useState('')
   const [filtrosOpen, setFiltrosOpen] = useState(false)
 
@@ -128,7 +133,8 @@ export default function Transacciones() {
   const pedirPagina = useCallback((antes) => {
     const params = { limite: POR_PAGINA }
     if (filtroTipo !== 'todos') params.tipo = filtroTipo
-    if (filtroMes) params.mes = filtroMes
+    if (filtroMes === SEMANA) params.semana = 'actual'
+    else if (filtroMes) params.mes = filtroMes
     if (consulta) params.q = consulta
     if (antes) params.antes = antes
     return api.get('/transacciones/', { params })
@@ -266,7 +272,7 @@ export default function Transacciones() {
           {filtroMes && (
             <button className="chip" onClick={() => setFiltroMes('')} aria-label="Quitar filtro de mes"
               style={{ background: 'var(--acento-suave)', color: 'var(--acento)', borderColor: 'transparent', minHeight: 32, paddingRight: 10 }}>
-              {capitalizar(meses.find(m => m.valor === filtroMes)?.corto || '')}
+              {filtroMes === SEMANA ? 'Esta semana' : capitalizar(meses.find(m => m.valor === filtroMes)?.corto || '')}
               <Icono nombre="x" size={13} grosor={2.4} />
             </button>
           )}

@@ -17,7 +17,7 @@ const TOUR = [
   { icono: 'mensaje', color: '#30D158', titulo: 'Se anotan solas', desc: 'Con el atajo del iPhone, cada SMS de Bancolombia o Nequi se registra con su categoría. Aprende de ti, aunque el banco escriba el comercio distinto.' },
   { icono: 'campana', color: '#FF453A', titulo: 'Recordatorios', desc: 'Te avisamos antes del corte y del pago de tus tarjetas, aunque tengas la app cerrada.' },
   { icono: 'lista', color: '#64D2FF', titulo: 'Historial', desc: 'Todos tus movimientos. Busca cualquiera o filtra por tipo y mes.' },
-  { icono: 'objetivo', color: '#FF9F0A', titulo: 'Presupuesto', desc: 'Límites de gasto por categoría y cuánto llevas en tiempo real.' },
+  { icono: 'objetivo', color: '#FF9F0A', titulo: 'Presupuesto', desc: 'Un tope para tu semana, con cuánto te queda hasta el domingo, y límites por categoría para el mes.' },
   { icono: 'candado', color: '#8E8E93', titulo: 'Tu cuenta, protegida', desc: 'Entra con Face ID o huella. Tras varios intentos fallidos la cuenta se bloquea un rato.' },
 ]
 

@@ -12,7 +12,7 @@ from .views import (
     WebAuthnCredentialsView,
     PerfilView,
     IngestaSMSView, TokenIngestaView, ProbarSMSView, MensajeBancoViewSet,
-    PushView, ProbarPushView, RecordatoriosView,
+    PushView, ProbarPushView, RecordatoriosView, SemanaView,
 )
 
 # El router genera automáticamente todos los endpoints CRUD
@@ -37,6 +37,7 @@ urlpatterns = [
     path('ingesta/sms/', IngestaSMSView.as_view(), name='ingesta-sms'),
     path('ingesta/token/', TokenIngestaView.as_view(), name='ingesta-token'),
     path('ingesta/probar/', ProbarSMSView.as_view(), name='ingesta-probar'),
+    path('semana/', SemanaView.as_view(), name='semana'),
     path('push/', PushView.as_view(), name='push'),
     path('push/probar/', ProbarPushView.as_view(), name='push-probar'),
     path('recordatorios/enviar/', RecordatoriosView.as_view(), name='recordatorios'),

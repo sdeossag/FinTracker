@@ -629,6 +629,64 @@ select.input {
   transition: transform 600ms var(--ease-out), background-color 200ms ease;
 }
 
+/* ── Presupuesto semanal ─────────────────────── */
+.semana-tarjeta {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 16px 18px 14px;
+  margin-bottom: 28px;
+  transition: transform 160ms var(--ease-out);
+}
+.semana-tarjeta:active { transform: scale(0.985); }
+.semana-cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.semana-cifra { margin-bottom: 12px; }
+.semana-pie { margin-top: 12px; }
+.semana-dias {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+}
+.semana-dia { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.semana-dia-pista {
+  width: 100%;
+  max-width: 26px;
+  height: 44px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+}
+.semana-dia-barra {
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.32);
+  transition: clip-path 500ms var(--ease-out), background-color 200ms ease;
+}
+.semana-dia-letra {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--texto-terciario);
+}
+.semana-dia[data-hoy] .semana-dia-letra { color: var(--texto-primario); }
+.semana-dia[data-futuro] .semana-dia-pista { opacity: 0.45; }
+@media (prefers-reduced-motion: reduce) {
+  .semana-tarjeta:active { transform: none; }
+  .semana-dia-barra { transition: none; }
+}
+@media (prefers-contrast: more) {
+  .semana-dia-barra { background: rgba(255, 255, 255, 0.6); }
+}
+
 /* ── Chips ───────────────────────────────────── */
 .chip {
   display: inline-flex;
